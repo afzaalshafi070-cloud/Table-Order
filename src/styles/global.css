@@ -1,0 +1,150 @@
+/* ============================================================
+   Design tokens
+   Concept: the visual language of an order ticket rail — the
+   spike where paper chits get pinned in a working kitchen, and
+   the perforated edge of a thermal receipt. Charcoal service
+   line, mustard for things in motion, sage for "go", sky for
+   the water flag (matches the brief's blue-flash requirement),
+   clay-red for anything urgent.
+   ============================================================ */
+:root {
+  --ink: #201d1a;
+  --paper: #faf7f0;
+  --paper-dim: #efe9dc;
+  --line: #d8d0bd;
+  --mustard: #e2a13a;
+  --sage: #4f7a5c;
+  --sky: #3f9fd6;
+  --clay: #b6472f;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --display: 'Fraunces', Georgia, serif;
+  --sans: 'Inter', system-ui, sans-serif;
+  --radius: 10px;
+
+  /* Per-restaurant brand colors — auto-extracted from the uploaded
+     logo (see src/utils/theme.js) and overridden at runtime via
+     applyTheme(). These defaults match the base palette above so a
+     restaurant with no logo yet looks identical to before. */
+  --brand-primary: var(--mustard);
+  --brand-primary-text: var(--ink);
+  --brand-accent: var(--sage);
+  --brand-ink: var(--ink);
+  --brand-paper-tint: var(--paper);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--brand-paper-tint, var(--paper));
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.4s ease;
+}
+button { font-family: inherit; cursor: pointer; transition: transform 0.12s ease, background 0.18s ease, opacity 0.18s ease; }
+button:active { transform: scale(0.94); }
+a { color: inherit; }
+
+/* ------------------------------------------------------------
+   Motion library — small, reusable keyframes used across the
+   customer and counter screens so the app feels alive rather
+   than a static form. Kept subtle: nothing here should distract
+   from reading a menu or a ticket, just soften every state change.
+   ------------------------------------------------------------ */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes popIn {
+  0%   { transform: scale(0.7); opacity: 0; }
+  60%  { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes slideUpBar {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes ticketIn {
+  from { opacity: 0; transform: translateY(-10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes bounceBadge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.35); }
+}
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+.fade-slide-up { animation: fadeSlideUp 0.35s ease both; }
+.pop-in { animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.ticket-in { animation: ticketIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.bounce-badge { animation: bounceBadge 0.35s ease; }
+
+.card-lift {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card-lift:active {
+  transform: scale(0.98);
+}
+
+.screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- perforated ticket divider, used sparingly as the one
+   signature device rather than decoration everywhere --- */
+.ticket-edge {
+  position: relative;
+  border-top: 1px dashed var(--line);
+}
+.ticket-edge::before {
+  content: '';
+  position: absolute;
+  top: -5px; left: 50%;
+  transform: translateX(-50%);
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--paper-dim);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.error-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px;
+  gap: 8px;
+}
+.error-screen h1 {
+  font-family: var(--mono);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: var(--clay);
+  margin: 0;
+}
+.error-screen p { max-width: 42ch; color: #6b6357; margin: 0; }
+
+/* focus visibility */
+:focus-visible {
+  outline: 2px solid var(--sky);
+  outline-offset: 2px;
+}
+
+.print-slip { display: none; }
+
+@media print {
+  body * { visibility: hidden; }
+  .print-slip, .print-slip * { visibility: visible; }
+  .print-slip {
+    display: block;
+    position: absolute; left: 0; top: 0;
+  }
+}
