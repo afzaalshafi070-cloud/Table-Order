@@ -127,7 +127,6 @@ export default function CounterDashboard() {
       setLoginError(
         'Supabase connection ka masla hai. Dobara try karein.'
       )
-
       setLoginLoading(false)
       return
     }
@@ -137,7 +136,6 @@ export default function CounterDashboard() {
     // ----------------------------------------------------------
 
     if (existing && !existing.is_active) {
-
       // Silent resume kabhi closed shift reopen nahi karega.
       if (silent) {
         sessionStorage.removeItem(STAFF_LOGIN_KEY)
@@ -162,7 +160,6 @@ export default function CounterDashboard() {
         setLoginError(
           'Restaurant reopen nahi ho saka. Supabase connection check karein.'
         )
-
         setLoginLoading(false)
         return
       }
@@ -175,7 +172,6 @@ export default function CounterDashboard() {
     // ----------------------------------------------------------
 
     if (!existing) {
-
       // Silent resume new restaurant create nahi karega.
       if (silent) {
         sessionStorage.removeItem(STAFF_LOGIN_KEY)
@@ -188,7 +184,6 @@ export default function CounterDashboard() {
         setLoginError(
           'Naya restaurant banane ke liye activation code chahiye.'
         )
-
         setLoginLoading(false)
         return
       }
@@ -207,7 +202,6 @@ export default function CounterDashboard() {
         setLoginError(
           'Ye activation code ghalat hai ya pehle istemal ho chuka hai.'
         )
-
         setLoginLoading(false)
         return
       }
@@ -231,7 +225,6 @@ export default function CounterDashboard() {
         setLoginError(
           'Session create nahi ho saka. Supabase connection check karein.'
         )
-
         setLoginLoading(false)
         return
       }
@@ -280,9 +273,7 @@ export default function CounterDashboard() {
     )
 
     setSession(existing)
-
     applyTheme(existing.theme)
-
     setLoginLoading(false)
   }
 
@@ -302,9 +293,7 @@ export default function CounterDashboard() {
   // ------------------------------------------------------------
 
   useEffect(() => {
-
     async function tryUrlLogin() {
-
       if (!urlRestaurantId || !urlPin) {
         return false
       }
@@ -333,14 +322,11 @@ export default function CounterDashboard() {
       )
 
       setSession(data)
-
       applyTheme(data.theme)
-
       return true
     }
 
     async function resumeExistingLogin() {
-
       // First try direct URL login.
       if (await tryUrlLogin()) {
         setResuming(false)
@@ -360,11 +346,9 @@ export default function CounterDashboard() {
         navigationEntry?.type
 
       if (navigationType !== 'reload') {
-
         sessionStorage.removeItem(
           STAFF_LOGIN_KEY
         )
-
         setResuming(false)
         return
       }
@@ -380,7 +364,6 @@ export default function CounterDashboard() {
       }
 
       try {
-
         const {
           name,
           pin
@@ -390,7 +373,6 @@ export default function CounterDashboard() {
           sessionStorage.removeItem(
             STAFF_LOGIN_KEY
           )
-
           setResuming(false)
           return
         }
@@ -403,9 +385,7 @@ export default function CounterDashboard() {
             silent: true
           }
         )
-
       } catch {
-
         sessionStorage.removeItem(
           STAFF_LOGIN_KEY
         )
@@ -429,13 +409,11 @@ export default function CounterDashboard() {
     logo_url,
     theme
   ) => {
-
     setSession(prev => ({
       ...prev,
       logo_url,
       theme
     }))
-
     applyTheme(theme)
   }
 
@@ -444,7 +422,6 @@ export default function CounterDashboard() {
   // ------------------------------------------------------------
 
   const closeShift = async () => {
-
     if (!session?.id) return
 
     await supabase
@@ -468,11 +445,9 @@ export default function CounterDashboard() {
   // ------------------------------------------------------------
 
   const logout = () => {
-
     sessionStorage.removeItem(
       STAFF_LOGIN_KEY
     )
-
     setSession(null)
   }
 
@@ -481,7 +456,6 @@ export default function CounterDashboard() {
   // ------------------------------------------------------------
 
   const acceptOrder = async order => {
-
     await supabase
       .from('orders')
       .update({
@@ -495,7 +469,6 @@ export default function CounterDashboard() {
   // ------------------------------------------------------------
 
   const serveOrder = async order => {
-
     await supabase
       .from('orders')
       .update({
@@ -509,7 +482,6 @@ export default function CounterDashboard() {
   // ------------------------------------------------------------
 
   const resolveTableAlerts = async tableId => {
-
     if (!session?.id) return
 
     await supabase
@@ -526,7 +498,6 @@ export default function CounterDashboard() {
   // ------------------------------------------------------------
 
   if (resuming) {
-
     return (
       <div
         className="screen"
@@ -543,7 +514,6 @@ export default function CounterDashboard() {
   // ------------------------------------------------------------
 
   if (!session) {
-
     return (
       <LoginGate
         onSubmit={login}
@@ -571,7 +541,6 @@ export default function CounterDashboard() {
   const alertsByTable =
     alerts.reduce(
       (map, alert) => {
-
         map[alert.table_id] =
           map[alert.table_id] || {}
 
@@ -579,12 +548,9 @@ export default function CounterDashboard() {
           true
 
         return map
-
       },
       {}
-    )
-
-  // ------------------------------------------------------------
+    )// ------------------------------------------------------------
   // DASHBOARD
   // ------------------------------------------------------------
 
@@ -606,7 +572,6 @@ export default function CounterDashboard() {
           color: '#fff'
         }}
       >
-
         <div
           style={{
             display: 'flex',
@@ -614,7 +579,6 @@ export default function CounterDashboard() {
             gap: 10
           }}
         >
-
           {session.logo_url && (
             <img
               src={session.logo_url}
@@ -629,7 +593,6 @@ export default function CounterDashboard() {
           )}
 
           <div>
-
             <div
               style={{
                 fontFamily: 'var(--mono)',
@@ -649,9 +612,7 @@ export default function CounterDashboard() {
             >
               {session.restaurant_name}
             </div>
-
           </div>
-
         </div>
 
         <div
@@ -661,7 +622,6 @@ export default function CounterDashboard() {
             gap: 8
           }}
         >
-
           <LogoUploader
             sessionId={session.id}
             existingLogoUrl={session.logo_url}
@@ -700,9 +660,7 @@ export default function CounterDashboard() {
           >
             Close Shift
           </button>
-
         </div>
-
       </header>
 
       {/* ======================================================
@@ -730,7 +688,6 @@ export default function CounterDashboard() {
           flexWrap: 'wrap'
         }}
       >
-
         <button
           onClick={() =>
             setTab('orders')
@@ -763,21 +720,17 @@ export default function CounterDashboard() {
         >
           QR Codes
         </button>
-
       </div>
 
       {/* ======================================================
-          MENU
+          MENU / QR / ORDERS
       ====================================================== */}
 
       {tab === 'menu' ? (
-
         <MenuEditor
           sessionId={session.id}
         />
-
       ) : tab === 'qr' ? (
-
         <QRCodes
           restaurantId={
             session.restaurant_id
@@ -786,13 +739,10 @@ export default function CounterDashboard() {
             session.qr_secret
           }
         />
-
       ) : (
-
         /* ====================================================
            ORDERS
         ==================================================== */
-
         <div
           className="order-grid"
           style={{
@@ -800,9 +750,7 @@ export default function CounterDashboard() {
             overflowY: 'auto'
           }}
         >
-
           {activeOrders.length === 0 && (
-
             <div
               style={{
                 gridColumn: '1 / -1',
@@ -813,48 +761,37 @@ export default function CounterDashboard() {
             >
               No active tickets — the floor is quiet.
             </div>
-
           )}
 
           {activeOrders.map(order => (
-
             <OrderCard
               key={order.id}
               order={order}
-
               hasWaterAlert={
                 !!alertsByTable[
                   order.table_id
                 ]?.water
               }
-
               hasWaiterAlert={
                 !!alertsByTable[
                   order.table_id
                 ]?.waiter
               }
-
               onAccept={
                 acceptOrder
               }
-
               onServe={
                 serveOrder
               }
-
               onResolveAlert={
                 resolveTableAlerts
               }
-
               onPrint={
                 setPrintOrder
               }
             />
-
           ))}
-
         </div>
-
       )}
 
       {/* ======================================================
@@ -873,27 +810,21 @@ export default function CounterDashboard() {
       ====================================================== */}
 
       {showEOD && (
-
         <EODReport
           restaurantName={
             session.restaurant_name
           }
-
           orders={orders}
-
           sessionOpenedAt={
             session.created_at
           }
-
           onClose={() =>
             setShowEOD(false)
           }
-
           onCloseShift={
             closeShift
           }
         />
-
       )}
 
       {/* ======================================================
@@ -901,7 +832,6 @@ export default function CounterDashboard() {
       ====================================================== */}
 
       <style>{`
-
         .order-grid {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
@@ -910,6 +840,18 @@ export default function CounterDashboard() {
         }
 
         @media (min-width: 900px) {
-
           .order-grid {
- 
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
+
+        @media (max-width: 600px) {
+          .order-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+
+    </div>
+  )
+              }
