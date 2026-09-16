@@ -29,17 +29,17 @@ function tabStyle(active) {
 
 export default function CounterDashboard() {
   const { restaurantId: urlRestaurantId, pin: urlPin } = useParams()
-  const [session, setSession] = useState(null) // { id, restaurant_name, created_at }
+  const [session, setSession] = useState(null)
   const [loginError, setLoginError] = useState(null)
   const [loginLoading, setLoginLoading] = useState(false)
   const [showEOD, setShowEOD] = useState(false)
-  const [tab, setTab] = useState('orders') // 'orders' | 'menu'
-  const [resuming, setResuming] = useState(true) // true while we check for a saved login
+  const [tab, setTab] = useState('orders')
+  const [resuming, setResuming] = useState(true)
   const [printOrder, setPrintOrder] = useState(null)
 
   useEffect(() => {
     if (!printOrder) return
-    const t = setTimeout(() => window.print(), 50) // let the hidden ticket render first
+    const t = setTimeout(() => window.print(), 50)
     const clear = () => setPrintOrder(null)
     window.addEventListener('afterprint', clear)
     return () => { clearTimeout(t); window.removeEventListener('afterprint', clear) }
@@ -49,10 +49,8 @@ export default function CounterDashboard() {
 
   const { orders, alerts } = useRealtimeOrders(session?.id, { onNewOrder: handleNewOrder })
 
-  // On page load/refresh, silently reconnect — either via a QR/direct-login
-  // link (/dashboard/:restaurantId/:pin, so staff never has to type
-  // name+PIN at all) or via the last saved staff login, so a phone
-  // refresh, lock/unlock, or accidental tab close doesn't log staff out.
+  // Page load: try URL login first (/dashboard/:restaurantId/:pin),
+  // then localStorage silent resume — so refresh never asks for login again.
   useEffect(() => {
     async function tryUrlLogin() {
       if (!urlRestaurantId || !urlPin) return false
@@ -77,21 +75,26 @@ export default function CounterDashboard() {
       try {
         const { name, pin } = JSON.parse(saved)
         await login(name, pin, '', { silent: true })
-      } catch { /* fall through to the login screen */ }
+      } catch { /* fall through to login screen */ }
       setResuming(false)
     }
     resume()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /**
+   * Login rules:
+   * - Existing active session (name+PIN) → open it, no activation code
+   * - Existing closed session (name+PIN) → reopen it, no activation code
+   * - Brand-new restaurant → Activation Code required (one-time)
+   * - silent=true (page refresh) → never create/reopen new shift by itself
+   */
   const login = async (name, pin, activationCode = '', { silent = false } = {}) => {
     setLoginLoading(true)
     setLoginError(null)
     const restaurantId = slugify(name)
 
-    // A (restaurant_id, pin) pair is unique in the schema, so there is at
-    // most one row ever for this restaurant+PIN — whether it's currently
-    // an open shift or one that was closed earlier today.
+    // Unique (restaurant_id, pin) — at most one row ever for this pair
     let { data: existing } = await supabase
       .from('sessions')
       .select('*')
@@ -99,14 +102,9 @@ export default function CounterDashboard() {
       .eq('pin', pin)
       .maybeSingle()
 
+    // Closed shift → reopen (explicit login only, not silent resume)
     if (existing && !existing.is_active) {
-      // Same restaurant, same PIN, just re-opening after a previous
-      // "Close Shift" — reopen the existing row. No activation code
-      // needed here; that gate is only for a restaurant that has never
-      // existed before.
       if (silent) {
-        // A silent auto-resume shouldn't reopen a shift on its own —
-        // only an explicit login should decide to start a new shift.
         localStorage.removeItem(STAFF_LOGIN_KEY)
         setLoginLoading(false)
         return
@@ -115,7 +113,8 @@ export default function CounterDashboard() {
         .from('sessions')
         .update({ is_active: true, closed_at: null })
         .eq('id', existing.id)
-        .select().single()
+        .select()
+        .single()
       if (reopenError) {
         setLoginError('Could not reopen this restaurant. Check your Supabase connection.')
         setLoginLoading(false)
@@ -124,31 +123,29 @@ export default function CounterDashboard() {
       existing = reopened
     }
 
+    // Brand-new restaurant
     if (!existing) {
-      // A silent auto-resume should never create a brand-new session by
-      // itself — just fall back to asking the user to log in again.
       if (silent) {
         localStorage.removeItem(STAFF_LOGIN_KEY)
         setLoginLoading(false)
         return
       }
 
-      // Brand-new restaurant: an unused activation code is required so a
-      // stranger can't spin up a free restaurant just by guessing a name
-      // and PIN. Existing restaurants logging back in never hit this path.
       if (!activationCode) {
-        setLoginError('Naya restaurant banane ke liye activation code chahiye.')
+        setLoginError('Naya restaurant banane ke liye Activation Code chahiye.')
         setLoginLoading(false)
         return
       }
+
       const { data: codeRow } = await supabase
         .from('activation_codes')
         .select('*')
         .eq('code', activationCode)
         .eq('is_used', false)
         .maybeSingle()
+
       if (!codeRow) {
-        setLoginError('Ye activation code ghalat hai ya pehle istemal ho chuka hai.')
+        setLoginError('Ye Activation Code ghalat hai ya pehle use ho chuka hai.')
         setLoginLoading(false)
         return
       }
@@ -156,22 +153,24 @@ export default function CounterDashboard() {
       const { data: created, error } = await supabase
         .from('sessions')
         .insert({ restaurant_id: restaurantId, restaurant_name: name, pin, is_active: true })
-        .select().single()
+        .select()
+        .single()
+
       if (error) {
+        console.error('Session create error:', error)
         setLoginError('Could not open a session. Check your Supabase connection.')
         setLoginLoading(false)
         return
       }
       existing = created
 
-      // Mark the code spent and record who used it, so it can never be
-      // reused for a second restaurant.
-      await supabase.from('activation_codes')
+      // Mark activation code as used (one-time only)
+      await supabase
+        .from('activation_codes')
         .update({ is_used: true, used_by: restaurantId })
         .eq('id', codeRow.id)
 
-      // First login ever for this restaurant — give them a starter menu
-      // they can immediately edit, rather than a blank Menu Editor.
+      // Seed starter menu for first-time restaurant
       const seedRows = STARTER_MENU.flatMap((section, sIdx) =>
         section.items.map((item, iIdx) => ({
           session_id: created.id,
@@ -186,7 +185,7 @@ export default function CounterDashboard() {
 
     localStorage.setItem(STAFF_LOGIN_KEY, JSON.stringify({ name, pin }))
     setSession(existing)
-    applyTheme(existing.theme) // no-op if empty — falls back to default palette
+    applyTheme(existing.theme)
     setLoginLoading(false)
   }
 
@@ -194,7 +193,7 @@ export default function CounterDashboard() {
     setSession(prev => ({ ...prev, logo_url, theme }))
   }
 
-  const closeShift = async (report) => {
+  const closeShift = async () => {
     await supabase.from('sessions').update({ is_active: false, closed_at: new Date().toISOString() }).eq('id', session.id)
     localStorage.removeItem(STAFF_LOGIN_KEY)
     setShowEOD(false)
@@ -273,27 +272,27 @@ export default function CounterDashboard() {
       {tab === 'menu' ? (
         <MenuEditor sessionId={session.id} />
       ) : tab === 'qr' ? (
-        <QRCodes restaurantId={session.restaurant_id} qrSecret={session.qr_secret} />
+        <QRCodes restaurantId={session.restaurant_id} pin={session.pin} />
       ) : (
-      <div className="order-grid" style={{ padding: 16, overflowY: 'auto' }}>
-        {activeOrders.length === 0 && (
-          <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#9a9284', padding: '40px 0' }}>
-            No active tickets — the floor is quiet.
-          </div>
-        )}
-        {activeOrders.map(order => (
-          <OrderCard
-            key={order.id}
-            order={order}
-            hasWaterAlert={!!alertsByTable[order.table_id]?.water}
-            hasWaiterAlert={!!alertsByTable[order.table_id]?.waiter}
-            onAccept={acceptOrder}
-            onServe={serveOrder}
-            onResolveAlert={resolveTableAlerts}
-            onPrint={setPrintOrder}
-          />
-        ))}
-      </div>
+        <div className="order-grid" style={{ padding: 16, overflowY: 'auto' }}>
+          {activeOrders.length === 0 && (
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#9a9284', padding: '40px 0' }}>
+              No active tickets — the floor is quiet.
+            </div>
+          )}
+          {activeOrders.map(order => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              hasWaterAlert={!!alertsByTable[order.table_id]?.water}
+              hasWaiterAlert={!!alertsByTable[order.table_id]?.waiter}
+              onAccept={acceptOrder}
+              onServe={serveOrder}
+              onResolveAlert={resolveTableAlerts}
+              onPrint={setPrintOrder}
+            />
+          ))}
+        </div>
       )}
 
       <PrintableTicket order={printOrder} restaurantName={session.restaurant_name} />
@@ -309,14 +308,12 @@ export default function CounterDashboard() {
       )}
 
       <style>{`
-        /* Mobile: strict 2-column grid, endless vertical scroll */
         .order-grid {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
           gap: 12px;
           align-content: start;
         }
-        /* Desktop: 3x2 matrix showing 6 tickets at a glance */
         @media (min-width: 900px) {
           .order-grid {
             grid-template-columns: repeat(3, 1fr);
@@ -326,4 +323,4 @@ export default function CounterDashboard() {
       `}</style>
     </div>
   )
-}
+                         }
