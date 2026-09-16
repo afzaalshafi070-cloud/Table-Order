@@ -25,18 +25,39 @@ export default function LoginGate({ onSubmit, error, loading }) {
         </h1>
 
         <label style={labelStyle}>Restaurant name</label>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Cafe Noor" style={inputStyle} />
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="e.g. Cafe Noor"
+          style={inputStyle}
+          autoComplete="organization"
+        />
 
         <label style={{ ...labelStyle, marginTop: 14 }}>Secret room PIN</label>
-        <input value={pin} onChange={e => setPin(e.target.value)} placeholder="4–6 digit PIN" style={inputStyle} />
+        <input
+          value={pin}
+          onChange={e => setPin(e.target.value)}
+          placeholder="4–6 digit PIN"
+          style={inputStyle}
+          autoComplete="current-password"
+        />
 
-        <label style={{ ...labelStyle, marginTop: 14 }}>Activation code</label>
-        <input value={activationCode} onChange={e => setActivationCode(e.target.value)} placeholder="Sirf naye restaurant ke liye" style={inputStyle} />
+        <label style={{ ...labelStyle, marginTop: 14 }}>
+          Activation Code
+          <span style={{ fontWeight: 400, color: '#9a9284' }}> (sirf pehli dafa)</span>
+        </label>
+        <input
+          value={activationCode}
+          onChange={e => setActivationCode(e.target.value.toUpperCase())}
+          placeholder="e.g. TEST-1001"
+          style={inputStyle}
+          autoComplete="off"
+        />
         <div style={{ fontSize: 11, color: '#9a9284', marginTop: 4 }}>
-          Purane restaurant isay khaali chhod dein — sirf pehli baar (naya restaurant banate waqt) chahiye.
+          Naya restaurant banate waqt zaroori. Purana restaurant ho to khali chhor do.
         </div>
 
-        {error && <div style={{ color: 'var(--clay)', fontSize: 13, marginTop: 10 }}>{error}</div>}
+        {error && <div style={{ color: 'var(--clay)', fontSize: 13, marginTop: 12 }}>{error}</div>}
 
         <button type="submit" disabled={loading} style={{
           width: '100%', marginTop: 20, background: 'var(--ink)', color: '#fff', border: 'none',
@@ -53,5 +74,5 @@ export default function LoginGate({ onSubmit, error, loading }) {
 const labelStyle = { display: 'block', fontSize: 12, fontWeight: 600, color: '#5a5346', marginBottom: 6 }
 const inputStyle = {
   width: '100%', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px',
-  fontSize: 15, background: 'var(--paper-dim)'
+  fontSize: 15, background: 'var(--paper-dim)', boxSizing: 'border-box'
 }
