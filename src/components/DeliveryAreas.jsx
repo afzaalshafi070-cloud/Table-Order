@@ -63,12 +63,32 @@ export default function DeliveryAreas({ sessionId, restaurantId, qrSecret }) {
         </div>
       </div>
 
+      {/* One rider for all areas */}
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: '#7a7264', marginBottom: 8 }}>
+          ALL AREAS — single rider
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14 }}>
+          <AreaCard
+            area={{ name: 'All Areas' }}
+            url={`${baseUrl}/rider/${restaurantId}/${qrSecret}/__all__`}
+            accent
+            hideDelete
+          />
+        </div>
+      </div>
+
       {areas.length === 0 && (
         <div style={{ textAlign: 'center', color: '#9a9284', padding: 24 }}>
-          Abhi koi area nahi — pehle ek add karein.
+          Named areas optional — All Areas QR upar se kaam karega. Ya neeche area add karein.
         </div>
       )}
 
+      {areas.length > 0 && (
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: '#7a7264', marginBottom: 8 }}>
+          PER-AREA RIDER QR
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14 }}>
         {areas.map(a => (
           <AreaCard
@@ -83,12 +103,13 @@ export default function DeliveryAreas({ sessionId, restaurantId, qrSecret }) {
   )
 }
 
-function AreaCard({ area, url, onDelete }) {
+function AreaCard({ area, url, onDelete, accent, hideDelete }) {
   const canvasRef = useRef(null)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    if (!canvasRef.current) return
+    if (!canvasRef.current || !url) return
+    setReady(false)
     QRCode.toCanvas(canvasRef.current, url, { width: 160, margin: 1 }, err => {
       if (!err) setReady(true)
     })
@@ -97,28 +118,39 @@ function AreaCard({ area, url, onDelete }) {
   const download = () => {
     if (!canvasRef.current) return
     const a = document.createElement('a')
-    a.download = `rider-${area.name}.png`
+    a.download = `rider-${String(area.name).replace(/\s+/g, '-').toLowerCase()}.png`
     a.href = canvasRef.current.toDataURL('image/png')
     a.click()
   }
 
   return (
     <div style={{
-      background: '#fff', border: '1px solid var(--line)', borderRadius: 'var(--radius)',
+      background: accent ? '#f0fdf4' : '#fff',
+      border: accent ? '2px solid var(--sage)' : '1px solid var(--line)',
+      borderRadius: 'var(--radius)',
       padding: 10, textAlign: 'center'
     }}>
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{area.name}</div>
+      <div style={{
+        fontWeight: 700, fontSize: 13, marginBottom: 6,
+        color: accent ? 'var(--sage)' : 'var(--ink)'
+      }}>{area.name}</div>
       <canvas ref={canvasRef} style={{ width: '100%', height: 'auto', borderRadius: 6 }} />
-      <div style={{ fontSize: 10, color: '#9a9284', marginTop: 4 }}>Rider QR</div>
+      <div style={{ fontSize: 10, color: '#9a9284', marginTop: 4 }}>
+        {accent ? 'All deliveries' : 'Rider QR'}
+      </div>
       <button onClick={download} disabled={!ready} style={{
-        marginTop: 6, width: '100%', background: 'var(--brand-primary)',
-        color: 'var(--brand-primary-text)', border: 'none', borderRadius: 8,
+        marginTop: 6, width: '100%',
+        background: accent ? 'var(--sage)' : 'var(--brand-primary)',
+        color: accent ? '#fff' : 'var(--brand-primary-text)',
+        border: 'none', borderRadius: 8,
         padding: '6px 0', fontSize: 12, fontWeight: 700, opacity: ready ? 1 : 0.5
       }}>Download</button>
-      <button onClick={onDelete} style={{
-        marginTop: 4, width: '100%', background: 'transparent', color: 'var(--clay)',
-        border: 'none', fontSize: 11, fontWeight: 600
-      }}>Delete</button>
+      {!hideDelete && (
+        <button onClick={onDelete} style={{
+          marginTop: 4, width: '100%', background: 'transparent', color: 'var(--clay)',
+          border: 'none', fontSize: 11, fontWeight: 600
+        }}>Delete</button>
+      )}
     </div>
   )
 }
