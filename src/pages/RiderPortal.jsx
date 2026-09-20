@@ -20,28 +20,35 @@ function startHeavyAlarm() {
 
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)()
-    if (ctx.state === 'suspended') ctx.resume()
+    const ensureRunning = () => {
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {})
+      }
+    }
+    ensureRunning()
+
     const beep = () => {
       if (stopped || !ctx) return
       try {
+        ensureRunning()
         const osc = ctx.createOscillator()
         const gain = ctx.createGain()
         osc.type = 'square'
         osc.frequency.value = 980
-        gain.gain.value = 0.45
+        gain.gain.value = 0.5
         osc.connect(gain)
         gain.connect(ctx.destination)
         osc.start()
-        setTimeout(() => { try { osc.stop() } catch {} }, 350)
+        setTimeout(() => { try { osc.stop() } catch {} }, 400)
       } catch {}
     }
     beep()
-    beepTimer = setInterval(beep, 700)
+    beepTimer = setInterval(beep, 650)
     vibTimer = setInterval(() => {
       try {
-        if (navigator.vibrate) navigator.vibrate([400, 100, 400, 100, 600])
+        if (navigator.vibrate) navigator.vibrate([500, 120, 500, 120, 700])
       } catch {}
-    }, 1200)
+    }, 1100)
   } catch {}
 
   return stop
@@ -59,8 +66,15 @@ export default function RiderPortal() {
   const [alertOrder, setAlertOrder] = useState(null)
   const [rideList, setRideList] = useState([])
   const [gpsOk, setGpsOk] = useState(false)
+  const [wakeOk, setWakeOk] = useState(false)
   const seenRef = useRef(new Set())
   const stopAlarmRef = useRef(null)
+  const restaurantRef = useRef(null)
+  const wakeLockRef = useRef(null)
+
+  useEffect(() => {
+    restaurantRef.current = restaurant
+  }, [restaurant])
 
   const stopAlarm = () => {
     if (stopAlarmRef.current) {
@@ -70,18 +84,56 @@ export default function RiderPortal() {
   }
 
   const fireAlarm = (order) => {
-    stopAlarm() // restart clean
+    stopAlarm()
     stopAlarmRef.current = startHeavyAlarm()
     setAlertOrder(order)
     try {
-      if (Notification.permission === 'granted') {
-        new Notification(`${restaurant?.restaurant_name || 'Order'} — NEW DELIVERY`, {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        const name = restaurantRef.current?.restaurant_name || 'Order'
+        new Notification(`${name} — NEW DELIVERY`, {
           body: `${isAllAreas ? (order.area_name || 'All') : areaName}: ${order.customer_address || order.customer_name || ''}`,
           requireInteraction: true,
+          tag: `delivery-${order.id}`,
         })
       }
     } catch {}
   }
+
+  useEffect(() => {
+    let released = false
+    const requestWake = async () => {
+      try {
+        if (!('wakeLock' in navigator)) return
+        const lock = await navigator.wakeLock.request('screen')
+        if (released) {
+          try { await lock.release() } catch {}
+          return
+        }
+        wakeLockRef.current = lock
+        setWakeOk(true)
+        lock.addEventListener('release', () => {
+          if (!released) setWakeOk(false)
+        })
+      } catch {
+        setWakeOk(false)
+      }
+    }
+    requestWake()
+
+    const onVis = () => {
+      if (document.visibilityState === 'visible') requestWake()
+    }
+    document.addEventListener('visibilitychange', onVis)
+
+    return () => {
+      released = true
+      document.removeEventListener('visibilitychange', onVis)
+      try {
+        if (wakeLockRef.current) wakeLockRef.current.release()
+      } catch {}
+      wakeLockRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     if (!restaurantId || !secret || !areaName) { setState('invalid'); return }
@@ -112,7 +164,13 @@ export default function RiderPortal() {
   useEffect(() => {
     if (!sessionId) return
 
-    const pull = async () => {
+    const matchesArea = (o) => {
+      if (!o || o.fulfillment !== 'delivery') return false
+      if (isAllAreas) return true
+      return String(o.area_name) === String(areaName)
+    }
+
+    const pull = async (alarmOnNew = false) => {
       let q = supabase
         .from('orders')
         .select('*')
@@ -125,19 +183,39 @@ export default function RiderPortal() {
       const { data } = await q
       const rows = data || []
       setRideList(rows)
-      rows.forEach(o => seenRef.current.add(o.id))
+
+      if (alarmOnNew) {
+        for (const o of rows) {
+          if (!seenRef.current.has(o.id)) {
+            seenRef.current.add(o.id)
+            fireAlarm(o)
+            break
+          }
+        }
+      } else {
+        rows.forEach(o => seenRef.current.add(o.id))
+      }
     }
-    pull()
+
+    pull(false)
+
+    const pollId = setInterval(() => {
+      if (document.visibilityState === 'visible') pull(true)
+    }, 12000)
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') pull(true)
+    }
+    document.addEventListener('visibilitychange', onVisible)
 
     const channel = supabase
-      .channel(`rider-${sessionId}-${areaName}-${Date.now()}`)
+      .channel(`rider-\( {sessionId}- \){areaName}-${Date.now()}`)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'orders',
         filter: `session_id=eq.${sessionId}`,
       }, (payload) => {
         const o = payload.new
-        if (!o || o.fulfillment !== 'delivery') return
-        if (!isAllAreas && String(o.area_name) !== String(areaName)) return
+        if (!matchesArea(o)) return
         if (seenRef.current.has(o.id)) return
         seenRef.current.add(o.id)
         setRideList(prev => [o, ...prev.filter(x => x.id !== o.id)])
@@ -148,8 +226,7 @@ export default function RiderPortal() {
         filter: `session_id=eq.${sessionId}`,
       }, (payload) => {
         const o = payload.new
-        if (!o || o.fulfillment !== 'delivery') return
-        if (!isAllAreas && String(o.area_name) !== String(areaName)) return
+        if (!matchesArea(o)) return
         if (o.status === 'served' || o.status === 'cancelled') {
           setRideList(prev => prev.filter(x => x.id !== o.id))
         } else {
@@ -162,16 +239,14 @@ export default function RiderPortal() {
       .subscribe()
 
     return () => {
+      clearInterval(pollId)
+      document.removeEventListener('visibilitychange', onVisible)
       supabase.removeChannel(channel)
-      // Do NOT stop alarm on channel resubscribe while alert is showing —
-      // only unmount of whole page should stop (handled below).
     }
   }, [sessionId, areaName, isAllAreas])
 
-  // Stop alarm only when leaving the page
   useEffect(() => () => stopAlarm(), [])
 
-  // GPS share
   useEffect(() => {
     if (!sessionId || !navigator.geolocation) return
     const push = (lat, lng) => {
@@ -221,14 +296,21 @@ export default function RiderPortal() {
           <div style={{ fontWeight: 700, fontSize: 15 }}>{restaurant?.restaurant_name}</div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 11, opacity: 0.8 }}>Rider · {areaLabel}</div>
         </div>
-        <div style={{
-          background: gpsOk ? 'var(--sage)' : 'var(--mustard)', color: '#fff', borderRadius: 999,
-          padding: '4px 10px', fontSize: 11, fontWeight: 700
-        }}>{gpsOk ? 'GPS ON' : 'GPS?'}</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{
+            background: wakeOk ? 'var(--sage)' : '#6b7280', color: '#fff', borderRadius: 999,
+            padding: '4px 8px', fontSize: 10, fontWeight: 700
+          }}>{wakeOk ? 'SCREEN ON' : 'LOCK?'}</div>
+          <div style={{
+            background: gpsOk ? 'var(--sage)' : 'var(--mustard)', color: '#fff', borderRadius: 999,
+            padding: '4px 8px', fontSize: 10, fontWeight: 700
+          }}>{gpsOk ? 'GPS ON' : 'GPS?'}</div>
+        </div>
       </header>
 
       <div style={{ padding: 16, fontSize: 13, color: '#7a7264' }}>
-        Page <b>open</b> rakhein. Naya order → heavy ring + vibrate jab tak Dismiss na dabao.
+        Page <b>open</b> rakhein (screen off na hone dein). Naya order → ring + vibrate + popup jab tak Dismiss na dabao.
+        Background se wapas aate hi naye orders check ho jate hain.
       </div>
 
       <div style={{ padding: '0 16px 8px', fontWeight: 700, fontSize: 14 }}>Ride list</div>
