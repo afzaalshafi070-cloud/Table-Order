@@ -218,7 +218,9 @@ export default function CounterDashboard() {
     setSession(existing)
     applyTheme(existing.theme)
     setLoginLoading(false)
-  }useEffect(() => {
+  }
+
+  useEffect(() => {
     async function tryUrlLogin() {
       if (!urlRestaurantId || !urlPin) return false
 
@@ -503,4 +505,4 @@ export default function CounterDashboard() {
       `}</style>
     </div>
   )
-      }
+          }
