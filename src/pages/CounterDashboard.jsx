@@ -10,7 +10,7 @@ import LogoUploader from '../components/LogoUploader.jsx'
 import MenuEditor from '../components/MenuEditor.jsx'
 import QRCodes from '../components/QRCodes.jsx'
 import DeliveryAreas from '../components/DeliveryAreas.jsx'
-import TaxSettings from '../components/TaxSettings.jsx'  // NEW COMPONENT
+import TaxSettings from '../components/TaxSettings.jsx'
 import PrintableTicket from '../components/PrintableTicket.jsx'
 import { applyTheme } from '../utils/theme.js'
 import { MENU as STARTER_MENU } from '../data/menu.js'
@@ -55,17 +55,31 @@ export default function CounterDashboard() {
   const [resuming, setResuming] = useState(true)
   const [printOrder, setPrintOrder] = useState(null)
 
+  // ============================================================
+  // PRINT TICKET
+  // ============================================================
   useEffect(() => {
     if (!printOrder) return
-    const t = setTimeout(() => { window.print() }, 50)
-    const clear = () => { setPrintOrder(null) }
+
+    const t = setTimeout(() => {
+      window.print()
+    }, 50)
+
+    const clear = () => {
+      setPrintOrder(null)
+    }
+
     window.addEventListener('afterprint', clear)
+
     return () => {
       clearTimeout(t)
       window.removeEventListener('afterprint', clear)
     }
   }, [printOrder])
 
+  // ============================================================
+  // NEW ORDER SOUND
+  // ============================================================
   const handleNewOrder = useCallback(() => {
     playDingDong()
   }, [])
@@ -74,276 +88,27 @@ export default function CounterDashboard() {
     session?.id,
     {
       onNewOrder: handleNewOrder,
-      shiftStartedAt: session?.shift_started_at || session?.created_at
+      shiftStartedAt:
+        session?.shift_started_at || session?.created_at
     }
   )
 
-  const login = async (
-  name,
-  pin,
-  activationCode = '',
-  { silent = false } = {}
-) => {
-  setLoginLoading(true)
-  setLoginError(null)
-
-  const restaurantId = slugify(name)
-
-  // ------------------------------------------------------------
-  // 1. PEHLE SIRF ACTIVE SHIFT CHECK KARO
-  // ------------------------------------------------------------
-  const {
-    data: activeSession,
-    error: activeError
-  } = await supabase
-    .from('sessions')
-    .select('*')
-    .eq('restaurant_id', restaurantId)
-    .eq('pin', pin)
-    .eq('is_active', true)
-    .maybeSingle()
-
-  if (activeError) {
-    setLoginError('Supabase connection ka masla hai. Dobara try karein.')
-    setLoginLoading(false)
-    return
-  }
-
-  // ------------------------------------------------------------
-  // 2. ACTIVE SHIFT MIL GAYI
-  // ------------------------------------------------------------
-  if (activeSession) {
-
-    // Refresh / same browser tab ke liye saved login allow
-    if (silent) {
-      sessionStorage.setItem(
-        STAFF_LOGIN_KEY,
-        JSON.stringify({
-          name: activeSession.restaurant_name,
-          pin
-        })
-      )
-
-      setSession(activeSession)
-      applyTheme(activeSession.theme)
-      setLoginLoading(false)
-      return
-    }
-
-    // Agar normal login hai aur active shift already chal rahi hai,
-    // doosri device ko login nahi karne dena.
-    const saved = sessionStorage.getItem(STAFF_LOGIN_KEY)
-
-    if (saved) {
-      try {
-        const savedLogin = JSON.parse(saved)
-
-        if (
-          savedLogin?.name &&
-          savedLogin?.pin === pin &&
-          slugify(savedLogin.name) === restaurantId
-        ) {
-          setSession(activeSession)
-          applyTheme(activeSession.theme)
-          setLoginLoading(false)
-          return
-        }
-      } catch {
-        sessionStorage.removeItem(STAFF_LOGIN_KEY)
-      }
-    }
-
-    setLoginError(
-      'Ye restaurant already kisi doosri device par active hai. Pehle us device se Shift Close karein.'
-    )
-    setLoginLoading(false)
-    return
-  }
-
-  // ------------------------------------------------------------
-  // 3. ACTIVE SHIFT NAHI HAI
-  // Ab purani CLOSED shift dhoondo.
-  // ------------------------------------------------------------
-  const {
-    data: oldSession,
-    error: oldError
-  } = await supabase
-    .from('sessions')
-    .select('*')
-    .eq('restaurant_id', restaurantId)
-    .eq('pin', pin)
-    .eq('is_active', false)
-    .order('closed_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (oldError) {
-    setLoginError('Purani shift check nahi ho saki. Dobara try karein.')
-    setLoginLoading(false)
-    return
-  }
-
-  // ------------------------------------------------------------
-  // 4. PURANA RESTAURANT
-  // New session create hogi.
-  // Purani orders purani session mein rahengi.
-  // ------------------------------------------------------------
-  if (oldSession) {
-
-    if (silent) {
-      sessionStorage.removeItem(STAFF_LOGIN_KEY)
-      setLoginLoading(false)
-      return
-    }
-
-    const newShiftData = {
-      restaurant_id: restaurantId,
-      restaurant_name: oldSession.restaurant_name,
-      pin,
-      is_active: true,
-      shift_started_at: new Date().toISOString(),
-      logo_url: oldSession.logo_url,
-      theme: oldSession.theme,
-      tax_percent: oldSession.tax_percent ?? 0,
-      tax_label: oldSession.tax_label || 'Tax'
-    }
-
-    const {
-      data: newShift,
-      error: newShiftError
-    } = await supabase
-      .from('sessions')
-      .insert(newShiftData)
-      .select('*')
-      .single()
-
-    if (newShiftError) {
-
-      // Agar isi waqt kisi doosri device ne shift open kar di
-      if (newShiftError.code === '23505') {
-        setLoginError(
-          'Ye restaurant abhi kisi doosri device par active ho gaya hai.'
-        )
-      } else {
-        setLoginError(
-          'Naya shift create nahi ho saka. Supabase database check karein.'
-        )
-      }
-
-      setLoginLoading(false)
-      return
-    }
-
-    sessionStorage.setItem(
-      STAFF_LOGIN_KEY,
-      JSON.stringify({
-        name: newShift.restaurant_name,
-        pin
-      })
-    )
-
-    setSession(newShift)
-    applyTheme(newShift.theme)
-    setLoginLoading(false)
-    return
-  }
-
-  // ------------------------------------------------------------
-  // 5. BILKUL NAYA RESTAURANT
-  // Activation code required.
-  // ------------------------------------------------------------
-  if (silent) {
-    sessionStorage.removeItem(STAFF_LOGIN_KEY)
-    setLoginLoading(false)
-    return
-  }
-
-  if (!activationCode) {
-    setLoginError(
-      'Naya restaurant banane ke liye activation code chahiye.'
-    )
-    setLoginLoading(false)
-    return
-  }
-
-  const {
-    data: codeRow,
-    error: codeError
-  } = await supabase
-    .from('activation_codes')
-    .select('*')
-    .eq('code', activationCode)
-    .eq('is_used', false)
-    .maybeSingle()
-
-  if (codeError || !codeRow) {
-    setLoginError(
-      'Ye activation code ghalat hai ya pehle istemal ho chuka hai.'
-    )
-    setLoginLoading(false)
-    return
-  }
-
-  const {
-    data: created,
-    error: createError
-  } = await supabase
-    .from('sessions')
-    .insert({
-      restaurant_id: restaurantId,
-      restaurant_name: name,
-      pin,
-      is_active: true,
-      shift_started_at: new Date().toISOString(),
-      tax_percent: 0,
-      tax_label: 'Tax'
-    })
-    .select('*')
-    .single()
-
-  if (createError) {
-    setLoginError(
-      'Session create nahi ho saka. Supabase database check karein.'
-    )
-    setLoginLoading(false)
-    return
-  }
-
-  await supabase
-    .from('activation_codes')
-    .update({
-      is_used: true,
-      used_by: restaurantId
-    })
-    .eq('id', codeRow.id)
-
-  const seedRows = STARTER_MENU.flatMap(
-    (section, sIdx) =>
-      section.items.map((item, iIdx) => ({
-        session_id: created.id,
-        category: section.category,
-        name: item.name,
-        price: item.price,
-        sort_order: sIdx * 100 + iIdx
-      }))
-  )
-
-  await supabase
-    .from('menu_items')
-    .insert(seedRows)
-
-  sessionStorage.setItem(
-    STAFF_LOGIN_KEY,
-    JSON.stringify({
-      name,
-      pin
-    })
-  )
-
-  setSession(created)
-  applyTheme(created.theme)
-  setLoginLoading(false)
-}
+  // ============================================================
+  // LOGIN / NEW SHIFT SYSTEM
+  //
+  // RULES:
+  // 1. Active shift exists:
+  //    - Normal login is blocked.
+  //    - Silent refresh login is allowed.
+  //
+  // 2. No active shift but old closed shift exists:
+  //    - Create a NEW session.
+  //    - Never reactivate old session.
+  //
+  // 3. No previous session:
+  //    - Activation code required.
+  //    - Create first session.
+  // ============================================================
   const login = async (
     name,
     pin,
@@ -355,132 +120,296 @@ export default function CounterDashboard() {
 
     const restaurantId = slugify(name)
 
-    let {
-      data: existing,
-      error: lookupError
+    // ------------------------------------------------------------
+    // STEP 1: CHECK ACTIVE SHIFT ONLY
+    // ------------------------------------------------------------
+    const {
+      data: activeSession,
+      error: activeError
     } = await supabase
       .from('sessions')
       .select('*')
       .eq('restaurant_id', restaurantId)
       .eq('pin', pin)
+      .eq('is_active', true)
       .maybeSingle()
 
-    if (lookupError) {
-      setLoginError('Supabase connection ka masla hai. Dobara try karein.')
+    if (activeError) {
+      setLoginError(
+        'Supabase connection ka masla hai. Dobara try karein.'
+      )
       setLoginLoading(false)
       return
     }
 
-    // ============================================================
-    // FIX #1: SHIFT ISOLATION
-    // Instead of reactivating closed shift, CREATE A NEW SESSION
-    // ============================================================
-    if (existing && !existing.is_active) {
+    // ------------------------------------------------------------
+    // ACTIVE SHIFT ALREADY EXISTS
+    // ------------------------------------------------------------
+    if (activeSession) {
+
+      // Browser refresh / same tab resume
+      if (silent) {
+        sessionStorage.setItem(
+          STAFF_LOGIN_KEY,
+          JSON.stringify({
+            name: activeSession.restaurant_name,
+            pin
+          })
+        )
+
+        setSession(activeSession)
+        applyTheme(activeSession.theme)
+        setLoginLoading(false)
+        return
+      }
+
+      // Normal login:
+      // Kisi active restaurant ko doosri login se open nahi karna.
+      setLoginError(
+        'Ye restaurant already kisi doosri device par active hai. Pehle us device se Shift Close karein.'
+      )
+
+      setLoginLoading(false)
+      return
+    }
+
+    // ------------------------------------------------------------
+    // STEP 2: NO ACTIVE SHIFT
+    // CHECK FOR PREVIOUS CLOSED SHIFT
+    // ------------------------------------------------------------
+    const {
+      data: oldSession,
+      error: oldError
+    } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .eq('pin', pin)
+      .eq('is_active', false)
+      .order('closed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (oldError) {
+      setLoginError(
+        'Purani shift check nahi ho saki. Dobara try karein.'
+      )
+      setLoginLoading(false)
+      return
+    }
+
+    // ------------------------------------------------------------
+    // STEP 3: EXISTING RESTAURANT
+    // CREATE COMPLETELY NEW SHIFT
+    // ------------------------------------------------------------
+    if (oldSession) {
+
+      // Silent refresh ke waqt NEW SHIFT create nahi karni.
+      // Sirf active session resume ho sakti hai.
       if (silent) {
         sessionStorage.removeItem(STAFF_LOGIN_KEY)
         setLoginLoading(false)
         return
       }
 
-      // Create a NEW session for this shift instead of reactivating
-      // This ensures old orders don't appear in new shift
       const newShiftData = {
         restaurant_id: restaurantId,
-        restaurant_name: existing.restaurant_name,  // Keep restaurant name
+        restaurant_name: oldSession.restaurant_name,
         pin,
         is_active: true,
         shift_started_at: new Date().toISOString(),
-        logo_url: existing.logo_url,  // Carry over logo
-        theme: existing.theme,         // Carry over theme
-        tax_percent: existing.tax_percent,  // Carry over tax settings
-        tax_label: existing.tax_label,
-        // qr_secret will be auto-generated as different
+
+        // Restaurant settings carry forward
+        logo_url: oldSession.logo_url,
+        theme: oldSession.theme,
+
+        // Tax settings carry forward
+        tax_percent: oldSession.tax_percent ?? 0,
+        tax_label: oldSession.tax_label || 'Tax'
+
+        // qr_secret intentionally NOT copied.
+        // Database will generate a new secret.
       }
 
       const {
-        data: reopened,
-        error: reopenError
+        data: newShift,
+        error: newShiftError
       } = await supabase
         .from('sessions')
         .insert(newShiftData)
-        .select()
+        .select('*')
         .single()
 
-      if (reopenError) {
-        setLoginError('Naya shift create nahi ho saka. Supabase connection check karein.')
+      if (newShiftError) {
+
+        // PostgreSQL unique violation.
+        // This can happen if another device opened the
+        // restaurant at almost exactly the same time.
+        if (newShiftError.code === '23505') {
+          setLoginError(
+            'Ye restaurant abhi kisi doosri device par active ho gaya hai.'
+          )
+        } else {
+          setLoginError(
+            'Naya shift create nahi ho saka. Supabase database check karein.'
+          )
+        }
+
         setLoginLoading(false)
         return
       }
 
-      existing = reopened
+      // Save this browser tab's login state
+      sessionStorage.setItem(
+        STAFF_LOGIN_KEY,
+        JSON.stringify({
+          name: newShift.restaurant_name,
+          pin
+        })
+      )
+
+      setSession(newShift)
+      applyTheme(newShift.theme)
+      setLoginLoading(false)
+      return
     }
 
-    if (!existing) {
-      if (silent) {
-        sessionStorage.removeItem(STAFF_LOGIN_KEY)
-        setLoginLoading(false)
-        return
+    // ------------------------------------------------------------
+    // STEP 4: COMPLETELY NEW RESTAURANT
+    // ACTIVATION CODE REQUIRED
+    // ------------------------------------------------------------
+    if (silent) {
+      sessionStorage.removeItem(STAFF_LOGIN_KEY)
+      setLoginLoading(false)
+      return
+    }
+
+    if (!activationCode) {
+      setLoginError(
+        'Naya restaurant banane ke liye activation code chahiye.'
+      )
+      setLoginLoading(false)
+      return
+    }
+
+    // ------------------------------------------------------------
+    // CHECK ACTIVATION CODE
+    // ------------------------------------------------------------
+    const {
+      data: codeRow,
+      error: codeError
+    } = await supabase
+      .from('activation_codes')
+      .select('*')
+      .eq('code', activationCode)
+      .eq('is_used', false)
+      .maybeSingle()
+
+    if (codeError || !codeRow) {
+      setLoginError(
+        'Ye activation code ghalat hai ya pehle istemal ho chuka hai.'
+      )
+      setLoginLoading(false)
+      return
+    }
+
+    // ------------------------------------------------------------
+    // CREATE FIRST SESSION
+    // ------------------------------------------------------------
+    const {
+      data: created,
+      error: createError
+    } = await supabase
+      .from('sessions')
+      .insert({
+        restaurant_id: restaurantId,
+        restaurant_name: name,
+        pin,
+        is_active: true,
+        shift_started_at: new Date().toISOString(),
+
+        // Default tax settings
+        tax_percent: 0,
+        tax_label: 'Tax'
+
+        // qr_secret is generated automatically by Supabase
+      })
+      .select('*')
+      .single()
+
+    if (createError) {
+
+      if (createError.code === '23505') {
+        setLoginError(
+          'Ye restaurant abhi kisi doosri device par active ho gaya hai.'
+        )
+      } else {
+        setLoginError(
+          'Session create nahi ho saka. Supabase connection check karein.'
+        )
       }
 
-      if (!activationCode) {
-        setLoginError('Naya restaurant banane ke liye activation code chahiye.')
-        setLoginLoading(false)
-        return
-      }
+      setLoginLoading(false)
+      return
+    }
 
-      const {
-        data: codeRow,
-        error: codeError
-      } = await supabase
-        .from('activation_codes')
-        .select('*')
-        .eq('code', activationCode)
-        .eq('is_used', false)
-        .maybeSingle()
+    // ------------------------------------------------------------
+    // MARK ACTIVATION CODE AS USED
+    // ------------------------------------------------------------
+    await supabase
+      .from('activation_codes')
+      .update({
+        is_used: true,
+        used_by: restaurantId
+      })
+      .eq('id', codeRow.id)
 
-      if (codeError || !codeRow) {
-        setLoginError('Ye activation code ghalat hai ya pehle istemal ho chuka hai.')
-        setLoginLoading(false)
-        return
-      }
+    // ------------------------------------------------------------
+    // CREATE STARTER MENU
+    // ------------------------------------------------------------
+    const seedRows = STARTER_MENU.flatMap(
+      (section, sIdx) =>
+        section.items.map((item, iIdx) => ({
+          session_id: created.id,
+          category: section.category,
+          name: item.name,
+          price: item.price,
+          sort_order: sIdx * 100 + iIdx
+        }))
+    )
 
-      const {
-        data: created,
-        error
-      } = await supabase
-        .from('sessions')
-        .insert({
-          restaurant_id: restaurantId,
-          restaurant_name: name,
-          pin,
-          is_active: true,
-          shift_started_at: new Date().toISOString(),
-          tax_percent: 0,           // Default: no tax
-          tax_label: 'Tax'          // Default: label
-        })
-        .select()
-        .single()
+    await supabase
+      .from('menu_items')
+      .insert(seedRows)
 
-      if (error) {
-        setLoginError('Session create nahi ho saka. Supabase connection check karein.')
-        setLoginLoading(false)
-        return
-      }
+    // ------------------------------------------------------------
+    // SAVE LOGIN
+    // ------------------------------------------------------------
+    sessionStorage.setItem(
+      STAFF_LOGIN_KEY,
+      JSON.stringify({
+        name,
+        pin
+      })
+    )
 
-      existing = created
-
-      await supabase
-        .from('activation_codes')
-        .update({
-          is_used: true,
-
+    setSession(created)
+    applyTheme(created.theme)
+    setLoginLoading(false)
   }
 
+  // ============================================================
+  // AUTO LOGIN / REFRESH
+  // ============================================================
   useEffect(() => {
+
     async function tryUrlLogin() {
       if (!urlRestaurantId || !urlPin) return false
 
-      const { data, error } = await supabase
+      const {
+        data,
+        error
+      } = await supabase
         .from('sessions')
         .select('*')
         .eq('restaurant_id', urlRestaurantId)
@@ -500,17 +429,27 @@ export default function CounterDashboard() {
 
       setSession(data)
       applyTheme(data.theme)
+
       return true
     }
 
     async function resumeExistingLogin() {
+
+      // ----------------------------------------------------------
+      // URL LOGIN
+      // ----------------------------------------------------------
       if (await tryUrlLogin()) {
         setResuming(false)
         return
       }
 
+      // ----------------------------------------------------------
+      // CHECK NAVIGATION TYPE
+      // Only resume session automatically on browser refresh.
+      // ----------------------------------------------------------
       const navigationEntry =
         window.performance?.getEntriesByType?.('navigation')?.[0]
+
       const navigationType = navigationEntry?.type
 
       if (navigationType !== 'reload') {
@@ -519,20 +458,39 @@ export default function CounterDashboard() {
         return
       }
 
-      const saved = sessionStorage.getItem(STAFF_LOGIN_KEY)
+      // ----------------------------------------------------------
+      // GET SAVED LOGIN FROM THIS TAB
+      // ----------------------------------------------------------
+      const saved =
+        sessionStorage.getItem(STAFF_LOGIN_KEY)
+
       if (!saved) {
         setResuming(false)
         return
       }
 
       try {
-        const { name, pin } = JSON.parse(saved)
+        const {
+          name,
+          pin
+        } = JSON.parse(saved)
+
         if (!name || !pin) {
           sessionStorage.removeItem(STAFF_LOGIN_KEY)
           setResuming(false)
           return
         }
-        await login(name, pin, '', { silent: true })
+
+        // silent = true means:
+        // DO NOT create a new shift.
+        // Only resume currently active shift.
+        await login(
+          name,
+          pin,
+          '',
+          { silent: true }
+        )
+
       } catch {
         sessionStorage.removeItem(STAFF_LOGIN_KEY)
       }
@@ -541,74 +499,131 @@ export default function CounterDashboard() {
     }
 
     resumeExistingLogin()
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // ============================================================
+  // LOGO / THEME
+  // ============================================================
   const handleLogoApplied = (logo_url, theme) => {
-    setSession(prev => ({ ...prev, logo_url, theme }))
+    setSession(prev => ({
+      ...prev,
+      logo_url,
+      theme
+    }))
+
     applyTheme(theme)
   }
 
   // ============================================================
-  // FIX #2: UPDATE SHIFT CLOSING (no longer reactivates)
+  // CLOSE CURRENT SHIFT
+  //
+  // IMPORTANT:
+  // Current session becomes CLOSED.
+  // It is NOT deleted.
+  // Next login creates a NEW session.
   // ============================================================
   const closeShift = async () => {
     if (!session?.id) return
-    // Mark current session as closed
-    await supabase
+
+    const {
+      error
+    } = await supabase
       .from('sessions')
       .update({
         is_active: false,
         closed_at: new Date().toISOString()
       })
       .eq('id', session.id)
+
+    if (error) {
+      setLoginError(
+        'Shift close nahi ho saki. Dobara try karein.'
+      )
+      return
+    }
+
+    // Remove current browser-tab login
     sessionStorage.removeItem(STAFF_LOGIN_KEY)
+
     setShowEOD(false)
     setSession(null)
-    // Next login will create a NEW session, not reactivate this one
   }
 
+  // ============================================================
+  // LOGOUT
+  // ============================================================
   const logout = () => {
     sessionStorage.removeItem(STAFF_LOGIN_KEY)
     setSession(null)
   }
 
+  // ============================================================
+  // ACCEPT ORDER
+  // ============================================================
   const acceptOrder = async order => {
     await supabase
       .from('orders')
-      .update({ status: 'cooking' })
+      .update({
+        status: 'cooking'
+      })
       .eq('id', order.id)
   }
 
+  // ============================================================
+  // SERVE ORDER
+  // ============================================================
   const serveOrder = async order => {
     await supabase
       .from('orders')
-      .update({ status: 'served' })
+      .update({
+        status: 'served'
+      })
       .eq('id', order.id)
   }
 
+  // ============================================================
+  // RESOLVE TABLE ALERT
+  // ============================================================
   const resolveTableAlerts = async tableId => {
     if (!session?.id) return
+
     await supabase
       .from('alerts')
-      .update({ resolved: true })
+      .update({
+        resolved: true
+      })
       .eq('session_id', session.id)
       .eq('table_id', tableId)
   }
 
   // ============================================================
-  // FIX #3: Update session tax settings
+  // TAX SETTINGS
   // ============================================================
-  const updateTaxSettings = async (taxPercent, taxLabel) => {
+  const updateTaxSettings = async (
+    taxPercent,
+    taxLabel
+  ) => {
     if (!session?.id) return
-    await supabase
+
+    const {
+      error
+    } = await supabase
       .from('sessions')
       .update({
         tax_percent: taxPercent,
         tax_label: taxLabel
       })
       .eq('id', session.id)
-    
+
+    if (error) {
+      setLoginError(
+        'Tax settings save nahi ho sakin.'
+      )
+      return
+    }
+
     setSession(prev => ({
       ...prev,
       tax_percent: taxPercent,
@@ -616,15 +631,24 @@ export default function CounterDashboard() {
     }))
   }
 
+  // ============================================================
+  // LOADING SCREEN
+  // ============================================================
   if (resuming) {
     return (
       <div
         className="screen"
-        style={{ alignItems: 'center', justifyContent: 'center' }}
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}
       />
     )
   }
 
+  // ============================================================
+  // LOGIN SCREEN
+  // ============================================================
   if (!session) {
     return (
       <LoginGate
@@ -635,18 +659,39 @@ export default function CounterDashboard() {
     )
   }
 
+  // ============================================================
+  // ACTIVE ORDERS
+  // ============================================================
   const activeOrders = orders.filter(
-    order => order.status !== 'served' && order.status !== 'cancelled'
+    order =>
+      order.status !== 'served' &&
+      order.status !== 'cancelled'
   )
 
-  const alertsByTable = alerts.reduce((map, alert) => {
-    map[alert.table_id] = map[alert.table_id] || {}
-    map[alert.table_id][alert.type] = true
-    return map
-  }, {})
+  // ============================================================
+  // ALERTS BY TABLE
+  // ============================================================
+  const alertsByTable = alerts.reduce(
+    (map, alert) => {
+      map[alert.table_id] =
+        map[alert.table_id] || {}
 
+      map[alert.table_id][alert.type] = true
+
+      return map
+    },
+    {}
+  )
+
+  // ============================================================
+  // MAIN DASHBOARD
+  // ============================================================
   return (
     <div className="screen">
+
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
       <header
         style={{
           display: 'flex',
@@ -658,37 +703,76 @@ export default function CounterDashboard() {
           color: '#fff'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10
+          }}
+        >
+
           {session.logo_url && (
             <img
               src={session.logo_url}
               alt=""
-              style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover' }}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                objectFit: 'cover'
+              }}
             />
           )}
+
           <div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, opacity: 0.7 }}>
+
+            <div
+              style={{
+                fontFamily: 'var(--mono)',
+                fontSize: 11,
+                opacity: 0.7
+              }}
+            >
               COUNTER
             </div>
-            <div style={{ fontFamily: 'var(--display)', fontSize: 19, fontWeight: 600 }}>
+
+            <div
+              style={{
+                fontFamily: 'var(--display)',
+                fontSize: 19,
+                fontWeight: 600
+              }}
+            >
               {session.restaurant_name}
             </div>
+
           </div>
+
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8
+          }}
+        >
+
           <LogoUploader
             sessionId={session.id}
             existingLogoUrl={session.logo_url}
             onApplied={handleLogoApplied}
             compact
           />
+
           <button
             onClick={logout}
             style={{
               background: 'transparent',
               color: 'rgba(255,255,255,0.8)',
-              border: '1px solid rgba(255,255,255,0.3)',
+              border:
+                '1px solid rgba(255,255,255,0.3)',
               borderRadius: 8,
               padding: '10px 12px',
               fontSize: 12
@@ -696,6 +780,7 @@ export default function CounterDashboard() {
           >
             Log out
           </button>
+
           <button
             onClick={() => setShowEOD(true)}
             style={{
@@ -710,74 +795,195 @@ export default function CounterDashboard() {
           >
             Close Shift
           </button>
+
         </div>
       </header>
 
+      {/* ======================================================
+          LOGO UPLOAD
+      ====================================================== */}
       {!session.logo_url && (
         <div style={{ padding: 16 }}>
-          <LogoUploader sessionId={session.id} onApplied={handleLogoApplied} />
+          <LogoUploader
+            sessionId={session.id}
+            onApplied={handleLogoApplied}
+          />
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, padding: '12px 16px 0', flexWrap: 'wrap' }}>
-        <button onClick={() => setTab('orders')} style={tabStyle(tab === 'orders')}>Orders</button>
-        <button onClick={() => setTab('menu')} style={tabStyle(tab === 'menu')}>Menu Editor</button>
-        <button onClick={() => setTab('qr')} style={tabStyle(tab === 'qr')}>QR Codes</button>
-        <button onClick={() => setTab('areas')} style={tabStyle(tab === 'areas')}>Delivery Areas</button>
-        <button onClick={() => setTab('tax')} style={tabStyle(tab === 'tax')}>Tax Settings</button>
+      {/* ======================================================
+          TABS
+      ====================================================== */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          padding: '12px 16px 0',
+          flexWrap: 'wrap'
+        }}
+      >
+
+        <button
+          onClick={() => setTab('orders')}
+          style={tabStyle(tab === 'orders')}
+        >
+          Orders
+        </button>
+
+        <button
+          onClick={() => setTab('menu')}
+          style={tabStyle(tab === 'menu')}
+        >
+          Menu Editor
+        </button>
+
+        <button
+          onClick={() => setTab('qr')}
+          style={tabStyle(tab === 'qr')}
+        >
+          QR Codes
+        </button>
+
+        <button
+          onClick={() => setTab('areas')}
+          style={tabStyle(tab === 'areas')}
+        >
+          Delivery Areas
+        </button>
+
+        <button
+          onClick={() => setTab('tax')}
+          style={tabStyle(tab === 'tax')}
+        >
+          Tax Settings
+        </button>
+
       </div>
 
+      {/* ======================================================
+          MENU
+      ====================================================== */}
       {tab === 'menu' ? (
-        <MenuEditor sessionId={session.id} />
+
+        <MenuEditor
+          sessionId={session.id}
+        />
+
       ) : tab === 'qr' ? (
-        <QRCodes restaurantId={session.restaurant_id} qrSecret={session.qr_secret} />
+
+        <QRCodes
+          restaurantId={session.restaurant_id}
+          qrSecret={session.qr_secret}
+        />
+
       ) : tab === 'areas' ? (
+
         <DeliveryAreas
           sessionId={session.id}
           restaurantId={session.restaurant_id}
           qrSecret={session.qr_secret}
         />
+
       ) : tab === 'tax' ? (
+
         <TaxSettings
           sessionId={session.id}
-          currentTaxPercent={session.tax_percent || 0}
-          currentTaxLabel={session.tax_label || 'Tax'}
+          currentTaxPercent={
+            session.tax_percent || 0
+          }
+          currentTaxLabel={
+            session.tax_label || 'Tax'
+          }
           onSave={updateTaxSettings}
         />
+
       ) : (
-        <div className="order-grid" style={{ padding: 16, overflowY: 'auto' }}>
+
+        // ====================================================
+        // ORDERS
+        // ====================================================
+        <div
+          className="order-grid"
+          style={{
+            padding: 16,
+            overflowY: 'auto'
+          }}
+        >
+
           {activeOrders.length === 0 && (
-            <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#9a9284', padding: '40px 0' }}>
+            <div
+              style={{
+                gridColumn: '1 / -1',
+                textAlign: 'center',
+                color: '#9a9284',
+                padding: '40px 0'
+              }}
+            >
               No active tickets — the floor is quiet.
             </div>
           )}
+
           {activeOrders.map(order => (
+
             <OrderCard
               key={order.id}
               order={order}
-              hasWaterAlert={!!alertsByTable[order.table_id]?.water}
-              hasWaiterAlert={!!alertsByTable[order.table_id]?.waiter}
+              hasWaterAlert={
+                !!alertsByTable[
+                  order.table_id
+                ]?.water
+              }
+              hasWaiterAlert={
+                !!alertsByTable[
+                  order.table_id
+                ]?.waiter
+              }
               onAccept={acceptOrder}
               onServe={serveOrder}
-              onResolveAlert={resolveTableAlerts}
+              onResolveAlert={
+                resolveTableAlerts
+              }
               onPrint={setPrintOrder}
             />
+
           ))}
+
         </div>
       )}
 
-      <PrintableTicket order={printOrder} restaurantName={session.restaurant_name} />
+      {/* ======================================================
+          PRINTABLE TICKET
+      ====================================================== */}
+      <PrintableTicket
+        order={printOrder}
+        restaurantName={
+          session.restaurant_name
+        }
+      />
 
+      {/* ======================================================
+          END OF DAY / CLOSE SHIFT
+      ====================================================== */}
       {showEOD && (
         <EODReport
-          restaurantName={session.restaurant_name}
+          restaurantName={
+            session.restaurant_name
+          }
           orders={orders}
-          sessionOpenedAt={session.shift_started_at || session.created_at}
-          onClose={() => setShowEOD(false)}
+          sessionOpenedAt={
+            session.shift_started_at ||
+            session.created_at
+          }
+          onClose={() =>
+            setShowEOD(false)
+          }
           onCloseShift={closeShift}
         />
       )}
 
+      {/* ======================================================
+          RESPONSIVE ORDER GRID
+      ====================================================== */}
       <style>{`
         .order-grid {
           display: grid;
@@ -785,13 +991,20 @@ export default function CounterDashboard() {
           gap: 12px;
           align-content: start;
         }
+
         @media (min-width: 900px) {
-          .order-grid { grid-template-columns: repeat(3, 1fr); }
+          .order-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
         }
+
         @media (max-width: 600px) {
-          .order-grid { grid-template-columns: 1fr; }
+          .order-grid {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
+
     </div>
   )
 }
