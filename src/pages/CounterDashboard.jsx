@@ -79,6 +79,272 @@ export default function CounterDashboard() {
   )
 
   const login = async (
+  name,
+  pin,
+  activationCode = '',
+  { silent = false } = {}
+) => {
+  setLoginLoading(true)
+  setLoginError(null)
+
+  const restaurantId = slugify(name)
+
+  // ------------------------------------------------------------
+  // 1. PEHLE SIRF ACTIVE SHIFT CHECK KARO
+  // ------------------------------------------------------------
+  const {
+    data: activeSession,
+    error: activeError
+  } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('restaurant_id', restaurantId)
+    .eq('pin', pin)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (activeError) {
+    setLoginError('Supabase connection ka masla hai. Dobara try karein.')
+    setLoginLoading(false)
+    return
+  }
+
+  // ------------------------------------------------------------
+  // 2. ACTIVE SHIFT MIL GAYI
+  // ------------------------------------------------------------
+  if (activeSession) {
+
+    // Refresh / same browser tab ke liye saved login allow
+    if (silent) {
+      sessionStorage.setItem(
+        STAFF_LOGIN_KEY,
+        JSON.stringify({
+          name: activeSession.restaurant_name,
+          pin
+        })
+      )
+
+      setSession(activeSession)
+      applyTheme(activeSession.theme)
+      setLoginLoading(false)
+      return
+    }
+
+    // Agar normal login hai aur active shift already chal rahi hai,
+    // doosri device ko login nahi karne dena.
+    const saved = sessionStorage.getItem(STAFF_LOGIN_KEY)
+
+    if (saved) {
+      try {
+        const savedLogin = JSON.parse(saved)
+
+        if (
+          savedLogin?.name &&
+          savedLogin?.pin === pin &&
+          slugify(savedLogin.name) === restaurantId
+        ) {
+          setSession(activeSession)
+          applyTheme(activeSession.theme)
+          setLoginLoading(false)
+          return
+        }
+      } catch {
+        sessionStorage.removeItem(STAFF_LOGIN_KEY)
+      }
+    }
+
+    setLoginError(
+      'Ye restaurant already kisi doosri device par active hai. Pehle us device se Shift Close karein.'
+    )
+    setLoginLoading(false)
+    return
+  }
+
+  // ------------------------------------------------------------
+  // 3. ACTIVE SHIFT NAHI HAI
+  // Ab purani CLOSED shift dhoondo.
+  // ------------------------------------------------------------
+  const {
+    data: oldSession,
+    error: oldError
+  } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('restaurant_id', restaurantId)
+    .eq('pin', pin)
+    .eq('is_active', false)
+    .order('closed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (oldError) {
+    setLoginError('Purani shift check nahi ho saki. Dobara try karein.')
+    setLoginLoading(false)
+    return
+  }
+
+  // ------------------------------------------------------------
+  // 4. PURANA RESTAURANT
+  // New session create hogi.
+  // Purani orders purani session mein rahengi.
+  // ------------------------------------------------------------
+  if (oldSession) {
+
+    if (silent) {
+      sessionStorage.removeItem(STAFF_LOGIN_KEY)
+      setLoginLoading(false)
+      return
+    }
+
+    const newShiftData = {
+      restaurant_id: restaurantId,
+      restaurant_name: oldSession.restaurant_name,
+      pin,
+      is_active: true,
+      shift_started_at: new Date().toISOString(),
+      logo_url: oldSession.logo_url,
+      theme: oldSession.theme,
+      tax_percent: oldSession.tax_percent ?? 0,
+      tax_label: oldSession.tax_label || 'Tax'
+    }
+
+    const {
+      data: newShift,
+      error: newShiftError
+    } = await supabase
+      .from('sessions')
+      .insert(newShiftData)
+      .select('*')
+      .single()
+
+    if (newShiftError) {
+
+      // Agar isi waqt kisi doosri device ne shift open kar di
+      if (newShiftError.code === '23505') {
+        setLoginError(
+          'Ye restaurant abhi kisi doosri device par active ho gaya hai.'
+        )
+      } else {
+        setLoginError(
+          'Naya shift create nahi ho saka. Supabase database check karein.'
+        )
+      }
+
+      setLoginLoading(false)
+      return
+    }
+
+    sessionStorage.setItem(
+      STAFF_LOGIN_KEY,
+      JSON.stringify({
+        name: newShift.restaurant_name,
+        pin
+      })
+    )
+
+    setSession(newShift)
+    applyTheme(newShift.theme)
+    setLoginLoading(false)
+    return
+  }
+
+  // ------------------------------------------------------------
+  // 5. BILKUL NAYA RESTAURANT
+  // Activation code required.
+  // ------------------------------------------------------------
+  if (silent) {
+    sessionStorage.removeItem(STAFF_LOGIN_KEY)
+    setLoginLoading(false)
+    return
+  }
+
+  if (!activationCode) {
+    setLoginError(
+      'Naya restaurant banane ke liye activation code chahiye.'
+    )
+    setLoginLoading(false)
+    return
+  }
+
+  const {
+    data: codeRow,
+    error: codeError
+  } = await supabase
+    .from('activation_codes')
+    .select('*')
+    .eq('code', activationCode)
+    .eq('is_used', false)
+    .maybeSingle()
+
+  if (codeError || !codeRow) {
+    setLoginError(
+      'Ye activation code ghalat hai ya pehle istemal ho chuka hai.'
+    )
+    setLoginLoading(false)
+    return
+  }
+
+  const {
+    data: created,
+    error: createError
+  } = await supabase
+    .from('sessions')
+    .insert({
+      restaurant_id: restaurantId,
+      restaurant_name: name,
+      pin,
+      is_active: true,
+      shift_started_at: new Date().toISOString(),
+      tax_percent: 0,
+      tax_label: 'Tax'
+    })
+    .select('*')
+    .single()
+
+  if (createError) {
+    setLoginError(
+      'Session create nahi ho saka. Supabase database check karein.'
+    )
+    setLoginLoading(false)
+    return
+  }
+
+  await supabase
+    .from('activation_codes')
+    .update({
+      is_used: true,
+      used_by: restaurantId
+    })
+    .eq('id', codeRow.id)
+
+  const seedRows = STARTER_MENU.flatMap(
+    (section, sIdx) =>
+      section.items.map((item, iIdx) => ({
+        session_id: created.id,
+        category: section.category,
+        name: item.name,
+        price: item.price,
+        sort_order: sIdx * 100 + iIdx
+      }))
+  )
+
+  await supabase
+    .from('menu_items')
+    .insert(seedRows)
+
+  sessionStorage.setItem(
+    STAFF_LOGIN_KEY,
+    JSON.stringify({
+      name,
+      pin
+    })
+  )
+
+  setSession(created)
+  applyTheme(created.theme)
+  setLoginLoading(false)
+}
+  const login = async (
     name,
     pin,
     activationCode = '',
@@ -207,34 +473,7 @@ export default function CounterDashboard() {
         .from('activation_codes')
         .update({
           is_used: true,
-          used_by: restaurantId
-        })
-        .eq('id', codeRow.id)
 
-      const seedRows = STARTER_MENU.flatMap(
-        (section, sIdx) =>
-          section.items.map((item, iIdx) => ({
-            session_id: created.id,
-            category: section.category,
-            name: item.name,
-            price: item.price,
-            sort_order: sIdx * 100 + iIdx
-          }))
-      )
-
-      await supabase
-        .from('menu_items')
-        .insert(seedRows)
-    }
-
-    sessionStorage.setItem(
-      STAFF_LOGIN_KEY,
-      JSON.stringify({ name, pin })
-    )
-
-    setSession(existing)
-    applyTheme(existing.theme)
-    setLoginLoading(false)
   }
 
   useEffect(() => {
