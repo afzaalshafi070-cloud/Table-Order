@@ -22,9 +22,6 @@ function slugify(name) {
     .replace(/(^-|-$)/g, '')
 }
 
-// IMPORTANT:
-// sessionStorage survives browser refresh in the same tab.
-// It is cleared when the tab is closed.
 const STAFF_LOGIN_KEY = 'tableorder:staffLogin'
 
 function tabStyle(active) {
@@ -57,50 +54,28 @@ export default function CounterDashboard() {
   const [resuming, setResuming] = useState(true)
   const [printOrder, setPrintOrder] = useState(null)
 
-  // ------------------------------------------------------------
-  // PRINT TICKET
-  // ------------------------------------------------------------
-
   useEffect(() => {
     if (!printOrder) return
-
-    const t = setTimeout(() => {
-      window.print()
-    }, 50)
-
-    const clear = () => {
-      setPrintOrder(null)
-    }
-
+    const t = setTimeout(() => { window.print() }, 50)
+    const clear = () => { setPrintOrder(null) }
     window.addEventListener('afterprint', clear)
-
     return () => {
       clearTimeout(t)
       window.removeEventListener('afterprint', clear)
     }
   }, [printOrder])
 
-  // ------------------------------------------------------------
-  // NEW ORDER SOUND
-  // ------------------------------------------------------------
-
   const handleNewOrder = useCallback(() => {
     playDingDong()
   }, [])
 
-  const {
-    orders,
-    alerts
-  } = useRealtimeOrders(
+  const { orders, alerts } = useRealtimeOrders(
     session?.id,
     {
-      onNewOrder: handleNewOrder
+      onNewOrder: handleNewOrder,
+      shiftStartedAt: session?.shift_started_at || session?.created_at
     }
   )
-
-  // ------------------------------------------------------------
-  // LOGIN
-  // ------------------------------------------------------------
 
   const login = async (
     name,
@@ -113,7 +88,6 @@ export default function CounterDashboard() {
 
     const restaurantId = slugify(name)
 
-    // Find existing restaurant + PIN
     let {
       data: existing,
       error: lookupError
@@ -125,19 +99,12 @@ export default function CounterDashboard() {
       .maybeSingle()
 
     if (lookupError) {
-      setLoginError(
-        'Supabase connection ka masla hai. Dobara try karein.'
-      )
+      setLoginError('Supabase connection ka masla hai. Dobara try karein.')
       setLoginLoading(false)
       return
     }
 
-    // ----------------------------------------------------------
-    // EXISTING BUT CLOSED SHIFT
-    // ----------------------------------------------------------
-
     if (existing && !existing.is_active) {
-      // Silent resume kabhi closed shift reopen nahi karega.
       if (silent) {
         sessionStorage.removeItem(STAFF_LOGIN_KEY)
         setLoginLoading(false)
@@ -151,16 +118,15 @@ export default function CounterDashboard() {
         .from('sessions')
         .update({
           is_active: true,
-          closed_at: null
+          closed_at: null,
+          shift_started_at: new Date().toISOString()
         })
         .eq('id', existing.id)
         .select()
         .single()
 
       if (reopenError) {
-        setLoginError(
-          'Restaurant reopen nahi ho saka. Supabase connection check karein.'
-        )
+        setLoginError('Restaurant reopen nahi ho saka. Supabase connection check karein.')
         setLoginLoading(false)
         return
       }
@@ -168,23 +134,15 @@ export default function CounterDashboard() {
       existing = reopened
     }
 
-    // ----------------------------------------------------------
-    // BRAND NEW RESTAURANT
-    // ----------------------------------------------------------
-
     if (!existing) {
-      // Silent resume new restaurant create nahi karega.
       if (silent) {
         sessionStorage.removeItem(STAFF_LOGIN_KEY)
         setLoginLoading(false)
         return
       }
 
-      // Activation code required
       if (!activationCode) {
-        setLoginError(
-          'Naya restaurant banane ke liye activation code chahiye.'
-        )
+        setLoginError('Naya restaurant banane ke liye activation code chahiye.')
         setLoginLoading(false)
         return
       }
@@ -200,14 +158,11 @@ export default function CounterDashboard() {
         .maybeSingle()
 
       if (codeError || !codeRow) {
-        setLoginError(
-          'Ye activation code ghalat hai ya pehle istemal ho chuka hai.'
-        )
+        setLoginError('Ye activation code ghalat hai ya pehle istemal ho chuka hai.')
         setLoginLoading(false)
         return
       }
 
-      // Create restaurant session
       const {
         data: created,
         error
@@ -217,22 +172,20 @@ export default function CounterDashboard() {
           restaurant_id: restaurantId,
           restaurant_name: name,
           pin,
-          is_active: true
+          is_active: true,
+          shift_started_at: new Date().toISOString()
         })
         .select()
         .single()
 
       if (error) {
-        setLoginError(
-          'Session create nahi ho saka. Supabase connection check karein.'
-        )
+        setLoginError('Session create nahi ho saka. Supabase connection check karein.')
         setLoginLoading(false)
         return
       }
 
       existing = created
 
-      // Consume activation code
       await supabase
         .from('activation_codes')
         .update({
@@ -240,10 +193,6 @@ export default function CounterDashboard() {
           used_by: restaurantId
         })
         .eq('id', codeRow.id)
-
-      // --------------------------------------------------------
-      // STARTER MENU
-      // --------------------------------------------------------
 
       const seedRows = STARTER_MENU.flatMap(
         (section, sIdx) =>
@@ -261,48 +210,19 @@ export default function CounterDashboard() {
         .insert(seedRows)
     }
 
-    // ----------------------------------------------------------
-    // SAVE LOGIN
-    // ----------------------------------------------------------
-
     sessionStorage.setItem(
       STAFF_LOGIN_KEY,
-      JSON.stringify({
-        name,
-        pin
-      })
+      JSON.stringify({ name, pin })
     )
 
     setSession(existing)
     applyTheme(existing.theme)
     setLoginLoading(false)
-  }
-
-  // ------------------------------------------------------------
-  // AUTO LOGIN
-  // ------------------------------------------------------------
-  //
-  // Priority:
-  //
-  // 1. URL login
-  // 2. Browser refresh saved login
-  // 3. Normal LoginGate
-  //
-  // URL example:
-  // /dashboard/cafe-noor/1234
-  //
-  // ------------------------------------------------------------
-
-  useEffect(() => {
+  }useEffect(() => {
     async function tryUrlLogin() {
-      if (!urlRestaurantId || !urlPin) {
-        return false
-      }
+      if (!urlRestaurantId || !urlPin) return false
 
-      const {
-        data,
-        error
-      } = await supabase
+      const { data, error } = await supabase
         .from('sessions')
         .select('*')
         .eq('restaurant_id', urlRestaurantId)
@@ -310,9 +230,7 @@ export default function CounterDashboard() {
         .eq('is_active', true)
         .maybeSingle()
 
-      if (error || !data) {
-        return false
-      }
+      if (error || !data) return false
 
       sessionStorage.setItem(
         STAFF_LOGIN_KEY,
@@ -328,103 +246,53 @@ export default function CounterDashboard() {
     }
 
     async function resumeExistingLogin() {
-      // First try direct URL login.
       if (await tryUrlLogin()) {
         setResuming(false)
         return
       }
 
-      // --------------------------------------------------------
-      // Only resume saved login on browser REFRESH.
-      // --------------------------------------------------------
-
       const navigationEntry =
-        window.performance?.getEntriesByType?.(
-          'navigation'
-        )?.[0]
-
-      const navigationType =
-        navigationEntry?.type
+        window.performance?.getEntriesByType?.('navigation')?.[0]
+      const navigationType = navigationEntry?.type
 
       if (navigationType !== 'reload') {
-        sessionStorage.removeItem(
-          STAFF_LOGIN_KEY
-        )
+        sessionStorage.removeItem(STAFF_LOGIN_KEY)
         setResuming(false)
         return
       }
 
-      const saved =
-        sessionStorage.getItem(
-          STAFF_LOGIN_KEY
-        )
-
+      const saved = sessionStorage.getItem(STAFF_LOGIN_KEY)
       if (!saved) {
         setResuming(false)
         return
       }
 
       try {
-        const {
-          name,
-          pin
-        } = JSON.parse(saved)
-
+        const { name, pin } = JSON.parse(saved)
         if (!name || !pin) {
-          sessionStorage.removeItem(
-            STAFF_LOGIN_KEY
-          )
+          sessionStorage.removeItem(STAFF_LOGIN_KEY)
           setResuming(false)
           return
         }
-
-        await login(
-          name,
-          pin,
-          '',
-          {
-            silent: true
-          }
-        )
+        await login(name, pin, '', { silent: true })
       } catch {
-        sessionStorage.removeItem(
-          STAFF_LOGIN_KEY
-        )
+        sessionStorage.removeItem(STAFF_LOGIN_KEY)
       }
 
       setResuming(false)
     }
 
     resumeExistingLogin()
-
-    // login intentionally excluded.
-    // This effect should run only once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ------------------------------------------------------------
-  // LOGO / THEME
-  // ------------------------------------------------------------
-
-  const handleLogoApplied = (
-    logo_url,
-    theme
-  ) => {
-    setSession(prev => ({
-      ...prev,
-      logo_url,
-      theme
-    }))
+  const handleLogoApplied = (logo_url, theme) => {
+    setSession(prev => ({ ...prev, logo_url, theme }))
     applyTheme(theme)
   }
 
-  // ------------------------------------------------------------
-  // CLOSE SHIFT
-  // ------------------------------------------------------------
-
   const closeShift = async () => {
     if (!session?.id) return
-
     await supabase
       .from('sessions')
       .update({
@@ -432,87 +300,47 @@ export default function CounterDashboard() {
         closed_at: new Date().toISOString()
       })
       .eq('id', session.id)
-
-    sessionStorage.removeItem(
-      STAFF_LOGIN_KEY
-    )
-
+    sessionStorage.removeItem(STAFF_LOGIN_KEY)
     setShowEOD(false)
     setSession(null)
   }
 
-  // ------------------------------------------------------------
-  // LOGOUT
-  // ------------------------------------------------------------
-
   const logout = () => {
-    sessionStorage.removeItem(
-      STAFF_LOGIN_KEY
-    )
+    sessionStorage.removeItem(STAFF_LOGIN_KEY)
     setSession(null)
   }
-
-  // ------------------------------------------------------------
-  // ACCEPT ORDER
-  // ------------------------------------------------------------
 
   const acceptOrder = async order => {
     await supabase
       .from('orders')
-      .update({
-        status: 'cooking'
-      })
+      .update({ status: 'cooking' })
       .eq('id', order.id)
   }
-
-  // ------------------------------------------------------------
-  // SERVE ORDER
-  // ------------------------------------------------------------
 
   const serveOrder = async order => {
     await supabase
       .from('orders')
-      .update({
-        status: 'served'
-      })
+      .update({ status: 'served' })
       .eq('id', order.id)
   }
 
-  // ------------------------------------------------------------
-  // RESOLVE TABLE ALERTS
-  // ------------------------------------------------------------
-
   const resolveTableAlerts = async tableId => {
     if (!session?.id) return
-
     await supabase
       .from('alerts')
-      .update({
-        resolved: true
-      })
+      .update({ resolved: true })
       .eq('session_id', session.id)
       .eq('table_id', tableId)
   }
-
-  // ------------------------------------------------------------
-  // LOADING SCREEN
-  // ------------------------------------------------------------
 
   if (resuming) {
     return (
       <div
         className="screen"
-        style={{
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
+        style={{ alignItems: 'center', justifyContent: 'center' }}
       />
     )
   }
-
-  // ------------------------------------------------------------
-  // LOGIN SCREEN
-  // ------------------------------------------------------------
 
   if (!session) {
     return (
@@ -524,44 +352,18 @@ export default function CounterDashboard() {
     )
   }
 
-  // ------------------------------------------------------------
-  // ACTIVE ORDERS
-  // ------------------------------------------------------------
+  const activeOrders = orders.filter(
+    order => order.status !== 'served' && order.status !== 'cancelled'
+  )
 
-  const activeOrders =
-    orders.filter(
-      order =>
-        order.status !== 'served' &&
-        order.status !== 'cancelled'
-    )
-
-  // ------------------------------------------------------------
-  // ALERTS BY TABLE
-  // ------------------------------------------------------------
-
-  const alertsByTable =
-    alerts.reduce(
-      (map, alert) => {
-        map[alert.table_id] =
-          map[alert.table_id] || {}
-
-        map[alert.table_id][alert.type] =
-          true
-
-        return map
-      },
-      {}
-    )// ------------------------------------------------------------
-  // DASHBOARD
-  // ------------------------------------------------------------
+  const alertsByTable = alerts.reduce((map, alert) => {
+    map[alert.table_id] = map[alert.table_id] || {}
+    map[alert.table_id][alert.type] = true
+    return map
+  }, {})
 
   return (
     <div className="screen">
-
-      {/* ======================================================
-          HEADER
-      ====================================================== */}
-
       <header
         style={{
           display: 'flex',
@@ -573,70 +375,37 @@ export default function CounterDashboard() {
           color: '#fff'
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10
-          }}
-        >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {session.logo_url && (
             <img
               src={session.logo_url}
               alt=""
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 8,
-                objectFit: 'cover'
-              }}
+              style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover' }}
             />
           )}
-
           <div>
-            <div
-              style={{
-                fontFamily: 'var(--mono)',
-                fontSize: 11,
-                opacity: 0.7
-              }}
-            >
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 11, opacity: 0.7 }}>
               COUNTER
             </div>
-
-            <div
-              style={{
-                fontFamily: 'var(--display)',
-                fontSize: 19,
-                fontWeight: 600
-              }}
-            >
+            <div style={{ fontFamily: 'var(--display)', fontSize: 19, fontWeight: 600 }}>
               {session.restaurant_name}
             </div>
           </div>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8
-          }}
-        >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <LogoUploader
             sessionId={session.id}
             existingLogoUrl={session.logo_url}
             onApplied={handleLogoApplied}
             compact
           />
-
           <button
             onClick={logout}
             style={{
               background: 'transparent',
               color: 'rgba(255,255,255,0.8)',
-              border:
-                '1px solid rgba(255,255,255,0.3)',
+              border: '1px solid rgba(255,255,255,0.3)',
               borderRadius: 8,
               padding: '10px 12px',
               fontSize: 12
@@ -644,11 +413,8 @@ export default function CounterDashboard() {
           >
             Log out
           </button>
-
           <button
-            onClick={() =>
-              setShowEOD(true)
-            }
+            onClick={() => setShowEOD(true)}
             style={{
               background: 'var(--clay)',
               color: '#fff',
@@ -664,93 +430,23 @@ export default function CounterDashboard() {
         </div>
       </header>
 
-      {/* ======================================================
-          LOGO SETUP
-      ====================================================== */}
-
       {!session.logo_url && (
         <div style={{ padding: 16 }}>
-          <LogoUploader
-            sessionId={session.id}
-            onApplied={handleLogoApplied}
-          />
+          <LogoUploader sessionId={session.id} onApplied={handleLogoApplied} />
         </div>
       )}
 
-      {/* ======================================================
-          TABS
-      ====================================================== */}
-
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          padding: '12px 16px 0',
-          flexWrap: 'wrap'
-        }}
-      >
-        <button
-          onClick={() =>
-            setTab('orders')
-          }
-          style={tabStyle(
-            tab === 'orders'
-          )}
-        >
-          Orders
-        </button>
-
-        <button
-          onClick={() =>
-            setTab('menu')
-          }
-          style={tabStyle(
-            tab === 'menu'
-          )}
-        >
-          Menu Editor
-        </button>
-
-        <button
-          onClick={() =>
-            setTab('qr')
-          }
-          style={tabStyle(
-            tab === 'qr'
-          )}
-        >
-          QR Codes
-        </button>
-
-        <button
-          onClick={() =>
-            setTab('areas')
-          }
-          style={tabStyle(
-            tab === 'areas'
-          )}
-        >
-          Areas
-        </button>
+      <div style={{ display: 'flex', gap: 8, padding: '12px 16px 0', flexWrap: 'wrap' }}>
+        <button onClick={() => setTab('orders')} style={tabStyle(tab === 'orders')}>Orders</button>
+        <button onClick={() => setTab('menu')} style={tabStyle(tab === 'menu')}>Menu Editor</button>
+        <button onClick={() => setTab('qr')} style={tabStyle(tab === 'qr')}>QR Codes</button>
+        <button onClick={() => setTab('areas')} style={tabStyle(tab === 'areas')}>Areas</button>
       </div>
 
-      {/* ======================================================
-          MENU / QR / ORDERS
-      ====================================================== */}
-
       {tab === 'menu' ? (
-        <MenuEditor
-          sessionId={session.id}
-        />
+        <MenuEditor sessionId={session.id} />
       ) : tab === 'qr' ? (
-        <QRCodes
-          restaurantId={
-            session.restaurant_id
-          }
-          qrSecret={
-            session.qr_secret
-          }
-        />
+        <QRCodes restaurantId={session.restaurant_id} qrSecret={session.qr_secret} />
       ) : tab === 'areas' ? (
         <DeliveryAreas
           sessionId={session.id}
@@ -758,96 +454,38 @@ export default function CounterDashboard() {
           qrSecret={session.qr_secret}
         />
       ) : (
-        /* ====================================================
-           ORDERS
-        ==================================================== */
-        <div
-          className="order-grid"
-          style={{
-            padding: 16,
-            overflowY: 'auto'
-          }}
-        >
+        <div className="order-grid" style={{ padding: 16, overflowY: 'auto' }}>
           {activeOrders.length === 0 && (
-            <div
-              style={{
-                gridColumn: '1 / -1',
-                textAlign: 'center',
-                color: '#9a9284',
-                padding: '40px 0'
-              }}
-            >
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#9a9284', padding: '40px 0' }}>
               No active tickets — the floor is quiet.
             </div>
           )}
-
           {activeOrders.map(order => (
             <OrderCard
               key={order.id}
               order={order}
-              hasWaterAlert={
-                !!alertsByTable[
-                  order.table_id
-                ]?.water
-              }
-              hasWaiterAlert={
-                !!alertsByTable[
-                  order.table_id
-                ]?.waiter
-              }
-              onAccept={
-                acceptOrder
-              }
-              onServe={
-                serveOrder
-              }
-              onResolveAlert={
-                resolveTableAlerts
-              }
-              onPrint={
-                setPrintOrder
-              }
+              hasWaterAlert={!!alertsByTable[order.table_id]?.water}
+              hasWaiterAlert={!!alertsByTable[order.table_id]?.waiter}
+              onAccept={acceptOrder}
+              onServe={serveOrder}
+              onResolveAlert={resolveTableAlerts}
+              onPrint={setPrintOrder}
             />
           ))}
         </div>
       )}
 
-      {/* ======================================================
-          PRINTABLE TICKET
-      ====================================================== */}
-
-      <PrintableTicket
-        order={printOrder}
-        restaurantName={
-          session.restaurant_name
-        }
-      />
-
-      {/* ======================================================
-          END OF DAY
-      ====================================================== */}
+      <PrintableTicket order={printOrder} restaurantName={session.restaurant_name} />
 
       {showEOD && (
         <EODReport
-          restaurantName={
-            session.restaurant_name
-          }
+          restaurantName={session.restaurant_name}
           orders={orders}
-          sessionOpenedAt={
-            session.created_at
-          }
-          onClose={() =>
-            setShowEOD(false)
-          }
-          onCloseShift={
-            closeShift
-          }
+          sessionOpenedAt={session.shift_started_at || session.created_at}
+          onClose={() => setShowEOD(false)}
+          onCloseShift={closeShift}
         />
       )}
-
-      {/* ======================================================
-          RESPONSIVE ORDER GRID
-      ====================================================== */}
 
       <style>{`
         .order-grid {
@@ -856,20 +494,13 @@ export default function CounterDashboard() {
           gap: 12px;
           align-content: start;
         }
-
         @media (min-width: 900px) {
-          .order-grid {
-            grid-template-columns: repeat(3, 1fr);
-          }
+          .order-grid { grid-template-columns: repeat(3, 1fr); }
         }
-
         @media (max-width: 600px) {
-          .order-grid {
-            grid-template-columns: 1fr;
-          }
+          .order-grid { grid-template-columns: 1fr; }
         }
       `}</style>
-
     </div>
   )
-              }
+      }
