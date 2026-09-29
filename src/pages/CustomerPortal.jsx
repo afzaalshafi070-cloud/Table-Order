@@ -459,12 +459,10 @@ export default function CustomerPortal() {
         </>
       )}
 
-      {!isTakeaway(tableId) && (
+  {!isTakeaway(tableId) && (
         <FloatingActions
           onWater={() => raiseAlert('water')}
           onWaiter={() => raiseAlert('waiter')}
+          onBill={() => raiseAlert('bill')}
         />
       )}
-    </div>
-  )
-}
