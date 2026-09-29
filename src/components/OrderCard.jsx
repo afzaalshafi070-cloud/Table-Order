@@ -10,35 +10,69 @@ export default function OrderCard({
   order,
   hasWaterAlert,
   hasWaiterAlert,
+  hasBillAlert,
   onAccept,
   onServe,
   onResolveAlert,
   onPrint,
 }) {
   const meta = STATUS_META[order.status] || STATUS_META.pending
-  const flashing = hasWaterAlert
+  const waterFlash = hasWaterAlert
+  const billFlash = hasBillAlert
+
+  let border = '1px solid var(--line)'
+  let animation = 'none'
+  if (billFlash) {
+    border = '2px solid #eab308'
+    animation = 'billFlash 0.9s infinite'
+  } else if (waterFlash) {
+    border = '2px solid var(--sky)'
+    animation = 'waterFlash 1s infinite'
+  } else if (hasWaiterAlert) {
+    border = '2px solid var(--clay)'
+  }
 
   return (
     <div
       className="ticket-in"
       style={{
         background: '#fff',
-        border: flashing ? '2px solid var(--sky)' : '1px solid var(--line)',
+        border,
         borderRadius: 'var(--radius)',
         padding: 14,
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
-        animation: flashing ? 'waterFlash 1s infinite' : 'none',
+        animation,
         position: 'relative',
       }}
     >
-      {flashing && (
+      {/* Alerts — clearly separate */}
+      {hasBillAlert && (
         <div
           style={{
             position: 'absolute',
             top: -10,
             right: 10,
+            background: 'linear-gradient(90deg, #eab308, #facc15)',
+            color: '#422006',
+            fontSize: 11,
+            fontWeight: 800,
+            padding: '3px 10px',
+            borderRadius: 6,
+            boxShadow: '0 0 0 2px #fef08a',
+            letterSpacing: 0.3,
+          }}
+        >
+          🧾 ASK FOR BILL
+        </div>
+      )}
+      {hasWaterAlert && (
+        <div
+          style={{
+            position: 'absolute',
+            top: -10,
+            right: hasBillAlert ? 120 : 10,
             background: 'var(--sky)',
             color: '#fff',
             fontSize: 11,
@@ -195,7 +229,7 @@ export default function OrderCard({
         >
           🧾 Bill
         </button>
-        {(hasWaterAlert || hasWaiterAlert) && (
+        {(hasWaterAlert || hasWaiterAlert || hasBillAlert) && (
           <button
             onClick={() => onResolveAlert(order.table_id)}
             style={{
@@ -215,7 +249,18 @@ export default function OrderCard({
           0%, 100% { box-shadow: 0 0 0 0 rgba(63,159,214,0.5); }
           50% { box-shadow: 0 0 0 6px rgba(63,159,214,0.15); }
         }
+        @keyframes billFlash {
+          0%, 100% {
+            box-shadow: 0 0 0 0 rgba(234,179,8,0.55);
+            background: #fffbeb;
+          }
+          50% {
+            box-shadow: 0 0 0 8px rgba(234,179,8,0.2);
+            background: #fef9c3;
+          }
+        }
       `}</style>
     </div>
   )
-}
+      }
+              
