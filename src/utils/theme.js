@@ -1,150 +1,186 @@
-import ColorThief from 'colorthief'
+// Dynamic Restaurant Color Extraction, WCAG Contrast Correction, and Theme Engine
 
 /**
- * Fallback palette used when a restaurant hasn't uploaded a logo yet.
- * Matches the app's default "kitchen ticket" look.
+ * Helper to convert HEX to RGB
  */
-export const DEFAULT_THEME = {
-  primary: '#e2a13a',       // mustard
-  primaryText: '#201d1a',   // ink (readable on mustard)
-  accent: '#4f7a5c',        // sage
-  ink: '#201d1a',
-  paperTint: '#faf7f0',
-}
-
-function luminance([r, g, b]) {
-  // Perceived brightness (ITU-R BT.601)
-  return (r * 299 + g * 587 + b * 114) / 1000
-}
-
-function toHex([r, g, b]) {
-  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
-}
-
-function mix(rgbA, rgbB, amount) {
-  // amount=0 -> rgbA, amount=1 -> rgbB
-  return rgbA.map((v, i) => Math.round(v + (rgbB[i] - v) * amount))
-}
-
-function saturation([r, g, b]) {
-  const max = Math.max(r, g, b), min = Math.min(r, g, b)
-  return max === 0 ? 0 : (max - min) / max
-}
-
-/**
- * Loads an image (with CORS enabled so canvas pixel sampling is allowed)
- * and derives a small brand palette from its dominant colors.
- * Falls back to DEFAULT_THEME if extraction fails for any reason
- * (CORS-blocked image, load error, etc.) so branding never breaks the app.
- */
-export async function extractThemeFromLogo(logoUrl) {
-  try {
-    const img = await loadImage(logoUrl)
-    const colorThief = new ColorThief()
-    const palette = colorThief.getPalette(img, 6) // [[r,g,b], ...]
-    if (!palette || palette.length === 0) return DEFAULT_THEME
-
-    // Dominant color = primary brand color.
-    const primary = palette[0]
-
-    // Pick the most saturated *other* color as the accent, so the
-    // accent doesn't just end up a shade of the same primary color.
-    const accentCandidate = palette
-      .slice(1)
-      .sort((a, b) => saturation(b) - saturation(a))[0] || primary
-
-    const secondary = palette.find(c => c !== primary && luminance(c) < 125) || accentCandidate
-    const primaryText = luminance(primary) > 150 ? '#201d1a' : '#ffffff'
-    const ink = luminance(primary) < 70 ? toHex(primary) : toHex(mix(primary, [32, 29, 26], 0.72))
-    // Stronger brand tint so the restaurant identity is visible across the UI.
-    const paperTint = toHex(mix(primary, [255, 255, 255], 0.88))
-    const brandSoft = toHex(mix(primary, [255, 255, 255], 0.72))
-    const brandDeep = toHex(mix(primary, [20, 20, 20], 0.58))
-
-    const sat = saturation(primary)
-    const lum = luminance(primary)
-    let fontDisplay = 'Fraunces, Georgia, serif'
-    let fontBody = 'Inter, system-ui, sans-serif'
-    if (lum < 60 && sat < 0.35) {
-      fontDisplay = 'Fraunces, "Times New Roman", serif'
-    } else if (sat > 0.55 && lum > 100) {
-      fontDisplay = 'Inter, "Segoe UI", sans-serif'
-    } else if (lum > 180) {
-      fontDisplay = 'Inter, system-ui, sans-serif'
-    }
-
-    return {
-      primary: toHex(primary),
-      primaryText,
-      accent: toHex(accentCandidate),
-      secondary: toHex(secondary),
-      ink,
-      paperTint,
-      brandSoft,
-      brandDeep,
-      fontDisplay,
-      fontBody,
-    }
-  } catch (err) {
-    console.warn('[theme] Could not extract palette from logo, using default theme:', err)
-    return DEFAULT_THEME
+function hexToRgb(hex) {
+  let c = hex.replace('#', '');
+  if (c.length === 3) {
+    c = c.split('').map(char => char + char).join('');
   }
-}
-
-function loadImage(url) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.onload = () => resolve(img)
-    img.onerror = reject
-    img.src = url
-  })
+  const num = parseInt(c, 16);
+  return {
+    r: (num >> 16) & 255,
+    g: (num >> 8) & 255,
+    b: num & 255
+  };
 }
 
 /**
- * Applies a theme object as CSS custom properties on the document root.
- * Semantic/functional colors (accept=sage, water=sky, urgent=clay) are
- * intentionally left untouched — staff learn "blue = water" once and it
- * should mean the same thing at every restaurant using the platform.
+ * Helper to convert RGB to HEX
  */
-export function applyTheme(theme) {
-  const t = { ...DEFAULT_THEME, ...(theme || {}) }
-  const root = document.documentElement.style
-  root.setProperty('--brand-primary', t.primary)
-  root.setProperty('--brand-primary-text', t.primaryText)
-  root.setProperty('--brand-accent', t.accent)
-  root.setProperty('--brand-secondary', t.secondary || t.accent)
-  root.setProperty('--brand-soft', t.brandSoft || t.paperTint)
-  root.setProperty('--brand-deep', t.brandDeep || t.ink)
-  root.setProperty('--brand-ink', t.ink)
-  root.setProperty('--brand-paper-tint', t.paperTint)
-  if (t.fontDisplay) root.setProperty('--display', t.fontDisplay)
-  if (t.fontBody) root.setProperty('--sans', t.fontBody)
+function rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map(x => {
+    const hex = Math.max(0, Math.min(255, Math.round(x))).toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  }).join('');
 }
 
-
-/** Customer light/dark surface. Brand colors stay; paper/ink adapt. */
-export function applyColorMode(mode = 'light') {
-  const root = document.documentElement
-  root.setAttribute('data-color-mode', mode === 'dark' ? 'dark' : 'light')
-  try { localStorage.setItem('tableorder:colorMode', mode === 'dark' ? 'dark' : 'light') } catch {}
+/**
+ * Calculate Relative Luminance for WCAG Contrast
+ */
+function getLuminance(r, g, b) {
+  const a = [r, g, b].map(v => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722;
 }
 
-export function getSavedColorMode() {
-  try {
-    const v = localStorage.getItem('tableorder:colorMode')
-    return v === 'dark' ? 'dark' : 'light'
-  } catch { return 'light' }
+/**
+ * Adjust Color Brightness / Saturation for contrast correction
+ */
+function adjustColorBrightness(hex, percent) {
+  const { r, g, b } = hexToRgb(hex);
+  const factor = 1 + percent / 100;
+  return rgbToHex(
+    Math.min(255, Math.max(0, r * factor)),
+    Math.min(255, Math.max(0, g * factor)),
+    Math.min(255, Math.max(0, b * factor))
+  );
 }
 
-/** Subtle logo-driven animated background CSS vars from theme palette. */
-export function applyBrandSurface(theme) {
-  const t = { ...DEFAULT_THEME, ...(theme || {}) }
-  const root = document.documentElement.style
-  const a = t.primary || DEFAULT_THEME.primary
-  const b = t.accent || DEFAULT_THEME.accent
-  const c = t.paperTint || DEFAULT_THEME.paperTint
-  root.setProperty('--bg-a', a)
-  root.setProperty('--bg-b', b)
-  root.setProperty('--bg-c', c)
+/**
+ * Strong Color Correction: Ensures logo extracted colors are vivid and high contrast
+ */
+export function sanitizeBrandColor(hex, fallback = '#e11d48') {
+  if (!hex || !/^#[0-9A-F]{6}$/i.test(hex)) return fallback;
+  const { r, g, b } = hexToRgb(hex);
+  const lum = getLuminance(r, g, b);
+
+  // If color is too light (washed out / yellow), darken it for visibility
+  if (lum > 0.6) {
+    return adjustColorBrightness(hex, -45);
+  }
+  // If color is extremely dark, brighten it slightly
+  if (lum < 0.05) {
+    return adjustColorBrightness(hex, 40);
+  }
+  return hex;
+}
+
+/**
+ * Extract Palette directly from Logo Image
+ */
+export async function extractPaletteFromLogo(logoUrl) {
+  const defaultPalette = {
+    primary: '#e11d48',
+    secondary: '#f97316',
+    accent: '#fbbf24',
+    dark: '#9f1239',
+    light: '#ffe4e6',
+    bgLayer1: '#fff1f2',
+    bgLayer2: '#fff7ed'
+  };
+
+  if (!logoUrl) return defaultPalette;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.src = logoUrl;
+
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 100;
+        canvas.height = 100;
+
+        ctx.drawImage(img, 0, 0, 100, 100);
+        const imgData = ctx.getImageData(0, 0, 100, 100).data;
+
+        const colorCounts = {};
+        for (let i = 0; i < imgData.length; i += 16) {
+          const r = imgData[i];
+          const g = imgData[i + 1];
+          const b = imgData[i + 2];
+          const alpha = imgData[i + 3];
+
+          if (alpha < 128) continue; // Skip transparent
+          // Skip pure whites/blacks
+          if ((r > 240 && g > 240 && b > 240) || (r < 15 && g < 15 && b < 15)) continue;
+
+          const hex = rgbToHex(r, g, b);
+          colorCounts[hex] = (colorCounts[hex] || 0) + 1;
+        }
+
+        const sortedColors = Object.keys(colorCounts).sort((a, b) => colorCounts[b] - colorCounts[a]);
+
+        if (sortedColors.length === 0) {
+          return resolve(defaultPalette);
+        }
+
+        const primaryRaw = sortedColors[0];
+        const secondaryRaw = sortedColors[1] || adjustColorBrightness(primaryRaw, 25);
+        const accentRaw = sortedColors[2] || adjustColorBrightness(primaryRaw, -25);
+
+        const primary = sanitizeBrandColor(primaryRaw);
+        const secondary = sanitizeBrandColor(secondaryRaw, '#f97316');
+        const accent = sanitizeBrandColor(accentRaw, '#fbbf24');
+
+        const dark = adjustColorBrightness(primary, -35);
+        const light = adjustColorBrightness(primary, 75);
+
+        resolve({
+          primary,
+          secondary,
+          accent,
+          dark,
+          light,
+          bgLayer1: adjustColorBrightness(primary, 85),
+          bgLayer2: adjustColorBrightness(secondary, 85)
+        });
+      } catch (err) {
+        console.warn('Logo color extraction failed, fallback used:', err);
+        resolve(defaultPalette);
+      }
+    };
+
+    img.onerror = () => {
+      resolve(defaultPalette);
+    };
+  });
+}
+
+/**
+ * Apply Brand Custom Properties dynamically to root document
+ */
+export function applyRestaurantTheme(palette, isDarkMode = false) {
+  if (!palette) return;
+  const root = document.documentElement;
+
+  root.style.setProperty('--brand-primary', palette.primary);
+  root.style.setProperty('--brand-secondary', palette.secondary);
+  root.style.setProperty('--brand-accent', palette.accent);
+  root.style.setProperty('--brand-dark', palette.dark);
+  root.style.setProperty('--brand-light', palette.light);
+  root.style.setProperty('--brand-bg-layer1', palette.bgLayer1);
+  root.style.setProperty('--brand-bg-layer2', palette.bgLayer2);
+
+  if (isDarkMode) {
+    root.style.setProperty('--bg-main', '#0f172a');
+    root.style.setProperty('--card-bg', 'rgba(30, 41, 59, 0.85)');
+    root.style.setProperty('--card-border', 'rgba(255, 255, 255, 0.12)');
+    root.style.setProperty('--text-main', '#f8fafc');
+    root.style.setProperty('--text-muted', '#94a3b8');
+    root.style.setProperty('--input-bg', '#1e293b');
+  } else {
+    root.style.setProperty('--bg-main', '#f8fafc');
+    root.style.setProperty('--card-bg', 'rgba(255, 255, 255, 0.90)');
+    root.style.setProperty('--card-border', 'rgba(226, 232, 240, 0.8)');
+    root.style.setProperty('--text-main', '#0f172a');
+    root.style.setProperty('--text-muted', '#64748b');
+    root.style.setProperty('--input-bg', '#ffffff');
+  }
 }
