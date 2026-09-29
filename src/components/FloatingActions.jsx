@@ -1,9 +1,10 @@
 import { useState } from 'react'
 
-export default function FloatingActions({ onWater, onWaiter }) {
+export default function FloatingActions({ onWater, onWaiter, onBill }) {
   const [flash, setFlash] = useState(null)
 
   const trigger = async (type, fn) => {
+    if (!fn) return
     setFlash(type)
     await fn()
     setTimeout(() => setFlash(f => (f === type ? null : f)), 1200)
@@ -34,6 +35,19 @@ export default function FloatingActions({ onWater, onWaiter }) {
           fontSize: 22, boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
           border: '1px solid var(--line)', transition: 'background 0.2s, color 0.2s'
         }}>🔔</button>
+      {onBill && (
+        <button
+          onClick={() => trigger('bill', onBill)}
+          aria-label="Ask for bill"
+          style={{
+            width: 56, height: 56, borderRadius: '50%', border: 'none',
+            background: flash === 'bill' ? '#eab308' : '#fff',
+            color: flash === 'bill' ? '#422006' : 'var(--ink)',
+            fontSize: 20, boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+            border: '1px solid var(--line)', transition: 'background 0.2s, color 0.2s',
+            fontWeight: 700
+          }}>🧾</button>
+      )}
     </div>
   )
 }
