@@ -4,12 +4,16 @@ import LogoUploader from './LogoUploader.jsx'
 import TaxSettings from './TaxSettings.jsx'
 import DeliveryAreas from './DeliveryAreas.jsx'
 import { applyTheme } from '../utils/theme.js'
+import { getOrCreateTabSecret } from '../utils/auth.js'
+import BillingPanel from './BillingPanel.jsx'
 import { uploadImage } from '../utils/uploadImage.js'
 
 const SECTIONS = [
   { id: 'general', label: 'Restaurant' },
   { id: 'branding', label: 'Branding' },
   { id: 'payment', label: 'Payment' },
+  { id: 'subscription', label: 'Subscription' },
+  { id: 'security', label: 'Security' },
   { id: 'tax', label: 'Tax' },
   { id: 'delivery', label: 'Delivery' },
   { id: 'notifications', label: 'Alerts' },
@@ -31,6 +35,9 @@ export default function SettingsCenter({
   setSession,
   onLogoApplied,
   updateTaxSettings,
+  planInfo,
+  paymentAccounts,
+  onPlanRefresh,
   onCloseShift,
   onLogout,
 }) {
@@ -374,6 +381,22 @@ export default function SettingsCenter({
         </Section>
       )}
 
+      {section === 'subscription' && (
+        <Section title="Subscription & renewal">
+          <BillingPanel
+            planInfo={planInfo}
+            paymentAccounts={paymentAccounts}
+            restaurantName={session?.restaurant_name}
+            session={session}
+            onPlanRefresh={onPlanRefresh}
+          />
+        </Section>
+      )}
+
+      {section === 'security' && (
+        <PinChangeSection session={session} />
+      )}
+
       {section === 'whatsapp' && (
         <Section title="WhatsApp (optional)">
           <p style={{ fontSize: 13, color: '#78716c', marginTop: 0 }}>
@@ -396,6 +419,54 @@ export default function SettingsCenter({
           </div>
         </Section>
       )}
+    </div>
+  )
+}
+
+function PinChangeSection({ session }) {
+  const [currentPin, setCurrentPin] = useState('')
+  const [newPin, setNewPin] = useState('')
+  const [confirmPin, setConfirmPin] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setMessage(''); setError('')
+    if (!currentPin || !newPin || !confirmPin) return setError('Sab fields zaroori hain.')
+    if (!/^\d{4,6}$/.test(newPin)) return setError('New PIN 4 se 6 digits ka hona chahiye.')
+    if (newPin !== confirmPin) return setError('New PIN aur Confirm PIN match nahi karte.')
+    if (newPin === currentPin) return setError('Naya PIN purane PIN se different hona chahiye.')
+    setBusy(true)
+    try {
+      const { data, error: rpcError } = await supabase.rpc('staff_change_pin', {
+        p_session_id: session.id,
+        p_tab_secret: getOrCreateTabSecret(),
+        p_current_pin: currentPin,
+        p_new_pin: newPin,
+      })
+      if (rpcError) throw rpcError
+      if (!data?.ok) throw new Error('PIN_CHANGE_FAILED')
+      setCurrentPin(''); setNewPin(''); setConfirmPin('')
+      setMessage('PIN successfully change ho gaya.')
+    } catch (e) {
+      const m = String(e?.message || '')
+      setError(m.includes('INVALID_CURRENT_PIN') ? 'Current PIN ghalat hai.' : 'PIN change nahi ho saka. Dobara try karein.')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div>
+      <p style={{ fontSize: 13, color: '#78716c', marginTop: 0 }}>Restaurant ka login PIN yahan change karein. PIN database mein hash form mein save hota hai.</p>
+      <form onSubmit={submit} style={{ display: 'grid', gap: 10 }}>
+        <input type="password" inputMode="numeric" autoComplete="current-password" value={currentPin} onChange={e => setCurrentPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Current PIN" style={inputStyle} />
+        <input type="password" inputMode="numeric" autoComplete="new-password" value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="New PIN (4–6 digits)" style={inputStyle} />
+        <input type="password" inputMode="numeric" autoComplete="new-password" value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Confirm new PIN" style={inputStyle} />
+        {error && <div style={{ color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>{error}</div>}
+        {message && <div style={{ color: '#15803d', fontSize: 13, fontWeight: 600 }}>{message}</div>}
+        <button type="submit" disabled={busy} style={{ marginTop: 4, border: 'none', borderRadius: 10, padding: '12px 16px', background: 'var(--brand-primary)', color: 'var(--brand-primary-text)', fontWeight: 700, fontSize: 14, opacity: busy ? .7 : 1 }}>{busy ? 'Saving…' : 'Update PIN'}</button>
+      </form>
     </div>
   )
 }
