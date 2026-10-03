@@ -1,0 +1,78 @@
+TABLE ORDER — FINAL BRAND + LOYALTY HARDENING HANDOFF
+
+Use the attached Table Order ZIP as the SOURCE OF TRUTH. Do not rebuild from scratch and do not replace the existing architecture.
+
+The restaurant login MUST remain Restaurant Name + PIN. First activation MUST remain Activation Code. Existing QR routes, customer ordering, Counter Dashboard, Admin Panel, Realtime, delivery, rider, menu, deals and subscription/payment flows must remain intact.
+
+The project now includes the following final requested additions:
+
+1) PREMIUM BRANDED TABLE QR
+- Existing QR URLs must not change.
+- Generate QR at high resolution for print.
+- Use the restaurant logo's extracted brand colors instead of generic black-only styling.
+- Keep finder eyes conventional/scanner-friendly.
+- Center the uploaded logo with high error correction.
+- Use rounded data modules for a premium custom look.
+- Provide Download Print QR and Print Table Card.
+- Physical print target is compact table-card size, not a giant poster.
+
+2) STRONG LOGO-DRIVEN THEME
+- The uploaded logo should drive the primary, accent, deep, surface, border and dark-mode palette.
+- Do not let pure black or pure white pixels from a logo dominate the entire interface unless they are genuinely useful brand colors.
+- Counter Dashboard and Customer Portal should feel like the restaurant's own branded site.
+- Customer dark mode must keep restaurant/menu/item names readable.
+- Do not remove functional order statuses, but avoid generic black/white dominance.
+
+3) BRAND CARD
+QR Center now has a Brand Card section.
+It must produce:
+- Landscape digital card.
+- Business-card-size physical front/back.
+- Restaurant logo and exact extracted brand palette.
+- Shop/banner style visual.
+- A deterministic cartoon character generated locally from vector/canvas shapes.
+- The character wears the restaurant's brand-color uniform.
+- Restaurant logo on the cap forehead and left side of shirt.
+- Character holds a phone facing forward with the restaurant QR visible.
+- Text: Scan QR for home delivery.
+- Back side: Thank you for coming!
+- Loyalty progress on the back.
+- Download Front, Download Back, Print Physical Card.
+
+Do NOT use an external AI image API. The character is intentionally generated locally from the restaurant's logo palette so the feature stays free and deployable.
+
+4) LOYALTY / REWARD CARD
+Counter Dashboard -> Settings -> Loyalty Card must allow:
+- Enable/disable.
+- Orders needed for reward: 1–50.
+- Free item reward.
+- Percentage discount reward.
+- Fixed PKR discount reward.
+- Reward item/name or discount value.
+
+Customer Portal:
+- Show a clear View Card button when loyalty is enabled.
+- Count only successful completed orders (`served`) server-side.
+- Update card progress after order completion.
+- Show reward-ready state when the configured threshold is reached.
+- Keep the card design fully matched to the restaurant logo/theme.
+
+5) SQL
+Run the two final patches after the existing production migrations:
+- supabase/SELLING_MODEL_FINAL_HARDENING.sql
+- supabase/LOYALTY_BRAND_CARD_MIGRATION.sql
+
+Do not invent a different schema unless an actual incompatibility exists.
+
+6) VALIDATION
+Before declaring the project complete:
+- Verify every changed JSX/JS file parses.
+- Verify QR URL structures are unchanged.
+- Verify customer order totals still come from server-side RPC.
+- Verify existing subscription/payment behavior remains.
+- Verify loyalty RPC requires authenticated customer access.
+- Verify no plaintext PIN or initial_pin_hash is returned to the browser.
+- Verify the project builds on Vercel if the build environment has dependencies available.
+- Never claim a build succeeded unless it actually ran.
+
+Do not add unrelated features. Preserve the working product and only harden/finish the requested final model.
