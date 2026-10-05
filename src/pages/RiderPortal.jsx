@@ -66,6 +66,8 @@ export default function RiderPortal() {
   const [sessionId, setSessionId] = useState(null)
   const [alertOrder, setAlertOrder] = useState(null)
   const [rideList, setRideList] = useState([])
+  const [iAmAvailable, setIAmAvailable] = useState(true)
+  const [claimBusy, setClaimBusy] = useState(null)
   const [gpsOk, setGpsOk] = useState(false)
   const [wakeOk, setWakeOk] = useState(false)
   const [alarmReady, setAlarmReady] = useState(false)
@@ -314,6 +316,43 @@ export default function RiderPortal() {
   }
 
   if (state === 'loading') {
+
+  const setAvailability = async (available) => {
+    if (!sessionId) return
+    try {
+      await supabase.rpc('rider_set_availability', {
+        p_session_id: sessionId,
+        p_area_name: areaName,
+        p_available: available,
+      })
+      setIAmAvailable(available)
+    } catch (e) {
+      console.warn('availability', e)
+    }
+  }
+
+  const claimOrder = async (orderId) => {
+    if (!sessionId) return
+    setClaimBusy(orderId)
+    try {
+      const { data, error } = await supabase.rpc('rider_claim_order', {
+        p_order_id: orderId,
+        p_session_id: sessionId,
+        p_area_name: areaName,
+      })
+      if (error) throw error
+      if (data?.ok) {
+        setIAmAvailable(false)
+        setRideList(prev => prev.map(o => o.id === orderId ? { ...o, assigned_rider_user_id: 'me', assigned_at: new Date().toISOString() } : o))
+      }
+    } catch (e) {
+      alert(e?.message || 'Claim fail')
+    } finally {
+      setClaimBusy(null)
+    }
+  }
+
+
     return <div className="screen" style={{ alignItems: 'center', justifyContent: 'center' }}>Connecting rider…</div>
   }
   if (state === 'invalid') {
@@ -335,6 +374,10 @@ export default function RiderPortal() {
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>{restaurant?.restaurant_name}</div>
           <div style={{ fontFamily: 'var(--mono)', fontSize: 11, opacity: 0.8 }}>Rider · {areaLabel}</div>
+          <button type="button" onClick={() => setAvailability(!iAmAvailable)} style={{
+            marginTop: 6, border: 'none', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700,
+            background: iAmAvailable ? 'var(--brand-accent, #4f7a5c)' : '#78716c', color: '#fff'
+          }}>{iAmAvailable ? 'Available' : 'Busy'}</button>
         </div>
         <button onClick={enableAlarm} style={{
           background: alarmReady ? 'var(--sage)' : 'var(--clay)', color: '#fff', border: 'none',
@@ -375,6 +418,17 @@ export default function RiderPortal() {
               background: 'var(--sky)', color: '#fff', borderRadius: 999,
               padding: '10px 0', fontWeight: 700, fontSize: 13, textDecoration: 'none'
             }}>Open route in Maps</a>
+            {!o.assigned_rider_user_id && (
+              <button type="button" disabled={claimBusy === o.id} onClick={() => claimOrder(o.id)} style={{
+                display: 'block', width: '100%', marginTop: 8, textAlign: 'center',
+                background: 'var(--brand-primary)', color: 'var(--brand-primary-text)', border: 'none', borderRadius: 999,
+                padding: '10px 0', fontWeight: 700, fontSize: 13, opacity: claimBusy === o.id ? 0.6 : 1
+              }}>{claimBusy === o.id ? 'Claiming…' : 'Claim this order'}</button>
+            )}
+            {o.assigned_rider_user_id && (
+              <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--brand-accent)' }}>Assigned</div>
+            )}
+
           </div>
         ))}
       </div>
