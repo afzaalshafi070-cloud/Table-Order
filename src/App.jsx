@@ -3,12 +3,14 @@ import CustomerPortal from './pages/CustomerPortal.jsx'
 import CounterDashboard from './pages/CounterDashboard.jsx'
 import RiderPortal from './pages/RiderPortal.jsx'
 import AdminPanel from './pages/AdminPanel.jsx'
+import BrandDelivery from './pages/BrandDelivery.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 export default function App() {
   return (
     <Routes>
       <Route path="/order/:restaurantId/:secret/:tableId" element={<CustomerPortal />} />
+      <Route path="/delivery/:restaurantId/:secret" element={<BrandDelivery />} />
       <Route path="/rider/:restaurantId/:secret/:areaName" element={<RiderPortal />} />
       <Route path="/dashboard" element={<CounterDashboard />} />
       <Route path="/admin" element={<AdminPanel />} />
