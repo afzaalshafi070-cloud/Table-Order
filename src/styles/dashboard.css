@@ -1,0 +1,251 @@
+/* ============================================================
+   Counter Dashboard shell — Phase 4
+   Neutral surfaces (70%); brand colour only on the active nav item,
+   primary buttons and key accents (30%).
+   Selectors use .screen.dash-root so they win over global.css
+   regardless of stylesheet order.
+   ============================================================ */
+
+.screen.dash-root {
+  flex-direction: row;
+  align-items: stretch;
+  min-height: 100dvh;
+  background: var(--paper);
+}
+.dash-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Desktop sidebar ---------- */
+.dash-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  flex: 0 0 232px;
+  width: 232px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 12px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), flex-basis 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dash-sidebar.is-collapsed { flex-basis: 72px; width: 72px; }
+
+.dash-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 4px 6px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.dash-sidebar__logo {
+  width: 36px; height: 36px; flex: 0 0 auto;
+  border-radius: 10px; object-fit: cover;
+}
+.dash-sidebar__logo--fallback {
+  display: grid; place-items: center;
+  background: var(--paper-dim); color: var(--ink);
+  font-weight: 700; font-size: 15px;
+}
+.dash-sidebar__name {
+  min-width: 0;
+  font-family: var(--display);
+  font-size: 15px; font-weight: 700; line-height: 1.2;
+  letter-spacing: -0.02em; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dash-sidebar__name small {
+  display: block; margin-top: 2px;
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 0.06em; color: var(--text-muted);
+}
+.dash-sidebar.is-collapsed .dash-sidebar__name { display: none; }
+.dash-sidebar.is-collapsed .dash-sidebar__brand { justify-content: center; padding-left: 0; padding-right: 0; }
+
+.dash-sidebar__nav { display: flex; flex-direction: column; gap: 4px; }
+
+.dash-sidebar__toggle {
+  margin-top: auto;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 16px; line-height: 1;
+  cursor: pointer;
+}
+.dash-sidebar__toggle:hover { background: var(--paper-dim); color: var(--ink); }
+.dash-sidebar__toggle:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+
+/* ---------- Nav buttons (shared by sidebar and bottom bar) ---------- */
+.dash-nav-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 600 13px/1 var(--sans);
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.dash-nav-btn:hover:not(.is-active) { background: var(--paper-dim); color: var(--ink); }
+.dash-nav-btn.is-active { color: var(--brand-primary-text); }
+.dash-nav-btn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.dash-nav-btn__indicator {
+  position: absolute; inset: 0;
+  border-radius: 10px;
+  background: var(--brand-primary);
+  z-index: 0;
+}
+.dash-nav-btn__icon,
+.dash-nav-btn__label { position: relative; z-index: 1; }
+.dash-nav-btn__icon {
+  width: 18px; height: 18px; flex: 0 0 auto;
+  fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.dash-sidebar.is-collapsed .dash-nav-btn { justify-content: center; padding: 10px 0; }
+.dash-sidebar.is-collapsed .dash-nav-btn__label { display: none; }
+
+/* ---------- Mobile bottom tab bar (hidden on desktop) ---------- */
+.dash-bottombar { display: none; }
+
+/* ---------- Header ---------- */
+.dash-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.dash-header__title {
+  font-family: var(--display);
+  font-size: 20px; font-weight: 700; letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.dash-header__sub {
+  margin-top: 2px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* ---------- Shift stats ---------- */
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 16px 0;
+}
+.dash-stat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dash-stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.dash-stat__label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.dash-stat__value {
+  margin-top: 4px;
+  font-family: var(--mono); font-size: 22px; font-weight: 700;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Order cards: hover lift lives on the wrapper ---------- */
+.dash-order-wrap { will-change: transform; border-radius: 14px; }
+.ticket-in { transition: border-color 0.4s ease, background-color 0.4s ease; }
+
+/* ---------- New-order arrival toast ---------- */
+.dash-toast-host {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
+}
+.dash-toast {
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+}
+.dash-toast__dot {
+  width: 10px; height: 10px; flex: 0 0 auto; border-radius: 50%;
+  background: var(--brand-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-subtle, rgba(184,125,31,0.15));
+}
+.dash-toast__text { display: grid; gap: 2px; min-width: 0; }
+.dash-toast__text strong { font-size: 14px; }
+.dash-toast__text span { font-size: 12px; color: var(--text-muted); }
+.dash-toast__progress {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 3px; background: var(--brand-primary);
+  transform-origin: left center;
+}
+
+/* ---------- Mobile (phones and small tablets) ---------- */
+@media (max-width: 899px) {
+  .screen.dash-root { flex-direction: column; }
+  .dash-sidebar { display: none; }
+  .dash-main { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+  .dash-bottombar {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 2px;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -6px 18px -12px rgba(0, 0, 0, 0.25);
+  }
+  .dash-bottombar .dash-nav-btn {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    min-height: 52px;
+    padding: 6px 2px;
+    border-radius: 12px;
+    font-size: 10px;
+    text-align: center;
+  }
+  .dash-bottombar .dash-nav-btn__icon { width: 20px; height: 20px; }
+  .dash-bottombar .dash-nav-btn__label { font-size: 10px; line-height: 1.1; }
+  .dash-stats { gap: 8px; padding: 12px 12px 0; }
+  .dash-stat { padding: 10px 12px; }
+  .dash-stat__label { font-size: 11px; }
+  .dash-stat__value { font-size: 17px; }
+  .dash-header { padding: 12px 14px; }
+}
+
+/* ---------- Reduced motion: keep state, drop movement ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .dash-sidebar, .dash-nav-btn, .dash-stat, .ticket-in { transition: none; }
+  .dash-stat:hover { transform: none; }
+}
