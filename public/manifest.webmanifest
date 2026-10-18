@@ -1,0 +1,13 @@
+{
+  "name": "Table Order",
+  "short_name": "Table Order",
+  "description": "QR table ordering, counter dashboard and rider app.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#050505",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
