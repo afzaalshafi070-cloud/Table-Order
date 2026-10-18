@@ -1,0 +1,33 @@
+TABLE ORDER — FINAL UPLOAD PATHS
+
+Upload the complete ZIP as-is.
+
+Required project paths:
+
+src/
+src/components/
+src/components/BrandQRCode.jsx
+src/components/BrandLoyaltyCard.jsx
+src/components/BrandedQRCode.jsx
+src/components/QRCodes.jsx
+src/components/SettingsCenter.jsx
+src/components/NameMeaning.jsx
+src/pages/
+src/pages/CustomerPortal.jsx
+src/pages/CounterDashboard.jsx
+src/utils/
+src/utils/theme.js
+src/styles/global.css
+src/hooks/
+src/data/
+supabase/
+supabase/schema.sql
+supabase/SELLING_MODEL_FINAL_HARDENING.sql
+supabase/LOYALTY_BRAND_CARD_MIGRATION.sql
+package.json
+vite.config.js
+vercel.json
+index.html
+
+All other existing files in the ZIP must also remain in their original paths.
+Do not upload only the listed files. The list highlights the new/changed paths.
