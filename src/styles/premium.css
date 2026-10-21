@@ -1,0 +1,242 @@
+/* ==========================================================================
+   PREMIUM LAYER — loaded last (main.jsx). Overrides the base look for a
+   consistent, premium feel on every device. Light and dark, phone → desktop.
+   ========================================================================== */
+
+/* ---------- 1. Design tokens ---------- */
+:root {
+  --pm-radius-sm: 12px;
+  --pm-radius: 18px;
+  --pm-radius-lg: 24px;
+  --pm-shadow: 0 1px 2px rgba(0,0,0,.06), 0 12px 32px -16px rgba(0,0,0,.28);
+  --pm-shadow-lift: 0 2px 4px rgba(0,0,0,.08), 0 24px 48px -20px rgba(0,0,0,.45);
+  --pm-ease: cubic-bezier(.16,1,.3,1);
+  --pm-gutter: clamp(14px, 3.6vw, 28px);
+  --pm-max: 1200px;
+}
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  font-family: var(--sans);
+  letter-spacing: -0.005em;
+  overflow-x: hidden;
+}
+h1, h2, h3, .brand-title, [style*="font-family: var(--display)"] {
+  font-family: var(--display);
+  letter-spacing: -0.02em;
+}
+[style*="font-family: var(--mono)"] { font-variant-numeric: tabular-nums; }
+
+/* ---------- 2. Dark mode — black, glass, brand glow ---------- */
+html[data-color-mode="dark"] body { background: #000; }
+html[data-color-mode="dark"] .brand-surface {
+  /* Glass tokens scoped to the customer surface. Inherited by every card. */
+  --surface: rgba(255,255,255,.045);
+  --surface-elevated: rgba(255,255,255,.075);
+  --border: rgba(255,255,255,.10);
+  --line: rgba(255,255,255,.10);
+  --ink: #f5f5f7;
+  --text-secondary: #c9c9d1;
+  --text-muted: #9a9aa6;
+  color: var(--ink);
+}
+
+/* Menu cards: glass with a soft top highlight and a lift on hover */
+.menu-grid > div {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--pm-radius) !important;
+  box-shadow: var(--pm-shadow) !important;
+  transition: transform .35s var(--pm-ease), box-shadow .35s var(--pm-ease), border-color .35s var(--pm-ease);
+}
+html[data-color-mode="dark"] .menu-grid > div {
+  background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.02)) !important;
+  box-shadow: 0 18px 40px -22px rgba(0,0,0,.9) !important;
+}
+.menu-grid > div:hover { border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent) !important; }
+
+/* Prices: clean display font, tabular digits */
+.menu-grid [style*="font-family: var(--mono)"],
+.brand-surface [style*="font-family: var(--mono)"] {
+  font-family: var(--display) !important;
+  font-weight: 700 !important;
+}
+
+/* ---------- 3. Responsive menu grid (phone → tablet → desktop) ---------- */
+.menu-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  max-width: var(--pm-max);
+  margin-inline: auto;
+}
+@media (min-width: 640px) {
+  .menu-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 16px !important; }
+}
+@media (min-width: 1024px) {
+  .menu-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 18px !important; }
+}
+.menu-grid > div { min-width: 0; }
+.menu-grid img { max-width: 100%; height: auto; }
+
+/* Fit everything inside the viewport: no sideways cut-off on any device */
+.brand-surface, .screen, .dash-main, .dash-main *:not(svg):not(path) { min-width: 0; }
+.brand-surface img, .screen img, .dash-main img, .dash-main canvas, .dash-main iframe {
+  max-width: 100%;
+}
+.brand-surface { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* ---------- 4. Offline banner ---------- */
+.to-offline {
+  position: fixed;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(92vw, 520px);
+  padding: 10px 16px;
+  border-radius: 999px;
+  font: 600 13px/1.35 var(--sans);
+  color: #fff;
+  background: rgba(20,20,22,.92);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 18px 40px -16px rgba(0,0,0,.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: toIn .45s var(--pm-ease) both;
+}
+.to-offline--ok { background: rgba(22,101,52,.94); }
+.to-offline__dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 0 rgba(245,158,11,.6);
+  animation: toPulse 1.6s infinite;
+  flex: 0 0 auto;
+}
+.to-offline--ok .to-offline__dot { background: #4ade80; animation: none; }
+@keyframes toIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes toPulse { 0% { box-shadow: 0 0 0 0 rgba(245,158,11,.55); } 70% { box-shadow: 0 0 0 10px rgba(245,158,11,0); } 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); } }
+
+/* ---------- 5. Rider login: premium card ---------- */
+.rdr-login {
+  border-radius: var(--pm-radius-lg) !important;
+  box-shadow: var(--pm-shadow-lift) !important;
+  border: 1px solid var(--color-border, #e6dfd0) !important;
+}
+.rdr-login__logo {
+  width: 84px; height: 84px; margin: 0 auto;
+  border-radius: 24px;
+  display: grid; place-items: center;
+  background: var(--brand-soft, #f3eee2);
+  color: var(--brand-primary, #b87d1f);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-primary, #b87d1f) 30%, transparent), 0 18px 36px -18px color-mix(in srgb, var(--brand-primary, #b87d1f) 60%, transparent);
+}
+.rdr-login__logo img { width: 100%; height: 100%; object-fit: contain; border-radius: 24px; }
+
+/* Rider login on dark: pure black with the brand glow behind the card */
+html[data-color-mode="dark"] .rdr-page--center {
+  background:
+    radial-gradient(ellipse 60% 45% at 50% 0%, color-mix(in srgb, var(--brand-primary, #e2a13a) 22%, transparent), transparent 70%),
+    #000;
+}
+html[data-color-mode="dark"] .rdr-login {
+  background: rgba(255,255,255,.05) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* ---------- 6. Reduced motion: respect the device setting ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+
+/* ---------- 7. Counter dashboard: fit every screen (phone → desktop) ---------- */
+.dash-main .order-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+  min-width: 0;
+}
+@media (min-width: 600px) {
+  .dash-main .order-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+@media (min-width: 1200px) {
+  .dash-main .order-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+@media (max-width: 600px) {
+  .dash-main .order-grid { padding: 12px !important; }
+}
+.dash-main .dash-stats {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+}
+.dash-main .dash-header { flex-wrap: wrap; }
+.dash-main .dash-stat__value {
+  overflow-wrap: anywhere;
+  font-size: clamp(15px, 4.2vw, 22px);
+}
+.dash-main .ticket-in { max-width: 100%; }
+
+/* ---------- 8. Premium customer header + light surface (both modes) ---------- */
+/* Light: brand-coloured bar with readable text. Dark: black glass with brand accent line. */
+.pm-header {
+  position: sticky !important;
+  top: 0;
+  z-index: 40;
+  background: linear-gradient(120deg,
+    var(--brand-primary) 0%,
+    color-mix(in srgb, var(--brand-primary) 70%, var(--brand-deep, #000)) 100%) !important;
+  color: var(--brand-primary-text, #fff) !important;
+  border-bottom: 1px solid rgba(255,255,255,.14) !important;
+  box-shadow: 0 14px 30px -20px color-mix(in srgb, var(--brand-primary) 85%, transparent);
+  backdrop-filter: saturate(140%) blur(12px);
+  -webkit-backdrop-filter: saturate(140%) blur(12px);
+}
+.pm-header div { color: inherit !important; }
+.pm-header a { color: #fff !important; }
+html[data-color-mode="dark"] .pm-header {
+  background: linear-gradient(120deg, rgba(14,14,17,.92), rgba(4,4,6,.92)) !important;
+  color: #f5f5f7 !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--brand-primary) 40%, transparent) !important;
+  box-shadow: 0 16px 40px -22px rgba(0,0,0,.9);
+}
+
+/* Light surface: soft brand mesh that slowly drifts (static when reduced motion) */
+html:not([data-color-mode="dark"]) .brand-surface {
+  background:
+    radial-gradient(ellipse 80% 50% at 0% -10%, color-mix(in srgb, var(--brand-primary) 18%, transparent), transparent 70%),
+    radial-gradient(ellipse 70% 45% at 100% 0%, color-mix(in srgb, var(--brand-accent, var(--brand-primary)) 14%, transparent), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--brand-primary) 5%, #fff), #faf8f4 55%);
+  background-attachment: fixed;
+}
+html[data-color-mode="dark"] .brand-surface {
+  background-image:
+    radial-gradient(ellipse 60% 40% at 15% -5%, color-mix(in srgb, var(--brand-primary) 16%, transparent), transparent 70%),
+    radial-gradient(ellipse 50% 35% at 90% 10%, color-mix(in srgb, var(--brand-accent, var(--brand-primary)) 10%, transparent), transparent 70%);
+  background-color: #000;
+}
+
+/* ---------- 9. Counter pages: one shared content width (no jumping between tabs) ---------- */
+:root {
+  --dash-content: 1040px;
+  --dash-pad: clamp(12px, 2.4vw, 28px);
+}
+.dash-main .dash-header { padding-left: var(--dash-pad); padding-right: var(--dash-pad); }
+@media (min-width: 1400px) {
+  :root { --dash-content: 1160px; }
+}
+
+/* Header: always a dark brand base with white text in light mode (readable on every brand colour) */
+html:not([data-color-mode="dark"]) .pm-header {
+  background: linear-gradient(120deg, var(--brand-deep, #3a1418) 0%,
+    color-mix(in srgb, var(--brand-primary) 45%, var(--brand-deep, #1a0a0c)) 100%) !important;
+  color: #fff !important;
+}
+html:not([data-color-mode="dark"]) .pm-header div { color: #fff !important; }
+
+/* ---------- RTL languages (Arabic, Urdu, Farsi, Pashto) ----------
+   html[dir="rtl"] is set by applyLanguageToDocument(). Flex rows, the
+   dashboard sidebar and the bottom bar mirror automatically; these rules
+   only fix text alignment in form fields. */
+html[dir="rtl"] body { text-align: start; }
+html[dir="rtl"] input,
+html[dir="rtl"] textarea,
+html[dir="rtl"] select { text-align: start; }

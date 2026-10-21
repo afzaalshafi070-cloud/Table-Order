@@ -1,0 +1,677 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion'
+import { useLocation, useParams } from 'react-router-dom'
+import { supabase } from '../supabaseClient.js'
+import { useRealtimeOrders } from '../hooks/useRealtimeOrders.js'
+import { useMenuItems } from '../hooks/useMenuItems.js'
+import { useDeals } from '../hooks/useDeals.js'
+import MenuList from '../components/MenuList.jsx'
+import LanguageGate from '../components/LanguageGate.jsx'
+import { hasChosenLang } from '../i18n/index.js'
+import NoteBar from '../components/NoteBar.jsx'
+import CartBar from '../components/CartBar.jsx'
+import CartModal from '../components/CartModal.jsx'
+import FloatingActions from '../components/FloatingActions.jsx'
+import TicTacToe from '../components/TicTacToe.jsx'
+import BallJump from '../components/BallJump.jsx'
+import MoodSelector from '../components/MoodSelector.jsx'
+import NameMeaning from '../components/NameMeaning.jsx'
+import ChefPopup from '../components/ChefPopup.jsx'
+import OrderSuccess from '../components/OrderSuccess.jsx'
+import NotFound from './NotFound.jsx'
+import { Skeleton } from '../components/ui/index.js'
+import { applyTheme, applyCustomerColorMode, getSavedCustomerColorMode, applyBrandSurface } from '../utils/theme.js'
+import { locationLabel, isTakeaway } from '../utils/locationLabel.js'
+import { ensureAnonymousAuth } from '../utils/auth.js'
+import PromoPopup from '../components/PromoPopup.jsx'
+import OrderTimer from '../components/OrderTimer.jsx'
+import { useT } from '../i18n/useT.js'
+import { itemName } from '../utils/itemText.js'
+
+const EASE = [0.16, 1, 0.3, 1]
+
+export default function CustomerPortal() {
+  const { restaurantId, secret, tableId } = useParams()
+  const location = useLocation()
+  const brandDeliveryMeta = location.state || {}
+
+  const [sessionState, setSessionState] = useState('loading')
+  const [sessionReload, setSessionReload] = useState(0)
+  const [sessionId, setSessionId] = useState(null)
+  const [langReady, setLangReady] = useState(() => hasChosenLang())
+  const [restaurant, setRestaurant] = useState(null)
+  const [cart, setCart] = useState({})
+  const [note, setNote] = useState('')
+  const [sending, setSending] = useState(false)
+  const [orderError, setOrderError] = useState('')
+  const [myOrderIds, setMyOrderIds] = useState([])
+  const [pinnedOrders, setPinnedOrders] = useState([])
+  const [view, setView] = useState('menu')
+  const [showChefPopup, setShowChefPopup] = useState(false)
+  const [cartOpen, setCartOpen] = useState(false)
+  const [justPlaced, setJustPlaced] = useState(false)
+  const [areas, setAreas] = useState([])
+  const [mood, setMood] = useState(null)
+  const [riderInfo, setRiderInfo] = useState({})
+  const [colorMode, setColorMode] = useState(() => getSavedCustomerColorMode())
+  const lastStatusRef = useRef({})
+  const { t, lang } = useT()
+  const statusLabel = s => ({
+    pending: t('status_pending'),
+    cooking: t('status_cooking'),
+    served: t('status_served'),
+    cancelled: t('status_cancelled'),
+  })[s] || s
+
+  useEffect(() => {
+    let cancelled = false
+    async function resolveSession() {
+      try {
+        await ensureAnonymousAuth()
+        const { data, error } = await supabase.rpc('customer_bootstrap', {
+          p_restaurant_id: restaurantId,
+          p_qr_secret: secret,
+          p_table_id: tableId,
+        })
+        if (cancelled) return
+        if (error || !data?.id) {
+          setSessionState('invalid')
+          return
+        }
+
+        setSessionId(data.id)
+        let theme = data.theme || {}
+        if (typeof theme === 'string') {
+          try { theme = JSON.parse(theme) } catch { theme = {} }
+        }
+        const taxPercent = Number(data.tax_percent ?? theme.tax_percent) || 0
+        const taxLabel = data.tax_label || theme.tax_label || 'Tax'
+        const whatsapp = data.whatsapp || theme.whatsapp || null
+        setRestaurant({ ...data, theme, tax_percent: taxPercent, tax_label: taxLabel, whatsapp })
+        // Mode must be set BEFORE the theme: applyTheme() skips light-only surface
+        // variables when dark mode is active, and it reads the mode from <html>.
+        applyCustomerColorMode(getSavedCustomerColorMode())
+        applyTheme(theme)
+        applyBrandSurface(theme)
+
+        const key = `tableorder:activeOrders:${data.id}:${tableId}`
+        try {
+          let saved = []
+          try { saved = JSON.parse(localStorage.getItem(key) || '[]') } catch { saved = [] }
+          const byId = {}
+
+          if (!isTakeaway(tableId)) {
+            const { data: openRows } = await supabase
+              .from('orders')
+              .select('*')
+              .eq('session_id', data.id)
+              .eq('table_id', tableId)
+              .not('status', 'in', '(served,cancelled)')
+              .order('created_at', { ascending: false })
+              .limit(10)
+            ;(openRows || []).forEach(o => { byId[o.id] = o })
+          }
+
+          if (Array.isArray(saved) && saved.length > 0) {
+            const { data: savedRows } = await supabase.from('orders').select('*').in('id', saved)
+            ;(savedRows || []).forEach(o => {
+              if (o.status !== 'served' && o.status !== 'cancelled') byId[o.id] = o
+            })
+          }
+
+          const activeList = Object.values(byId)
+          const activeIds = activeList.map(o => o.id)
+          localStorage.setItem(key, JSON.stringify(activeIds))
+          if (activeIds.length > 0) {
+            setMyOrderIds(activeIds)
+            setPinnedOrders(activeList)
+            setView('orders')
+          } else {
+            setMyOrderIds([])
+            setPinnedOrders([])
+            setView('menu')
+          }
+        } catch (e) {
+          console.error('restore orders', e)
+          setMyOrderIds([])
+          setPinnedOrders([])
+          setView('menu')
+        }
+
+        const { data: areaRows } = await supabase
+          .from('delivery_areas')
+          .select('id, name, charge')
+          .eq('session_id', data.id)
+          .order('name')
+        if (!cancelled) {
+          setAreas(areaRows || [])
+          setSessionState('ready')
+        }
+      } catch (e) {
+        console.error('customer bootstrap', e)
+        if (!cancelled) setSessionState('invalid')
+      }
+    }
+    if (restaurantId && secret && tableId) resolveSession()
+    return () => { cancelled = true }
+  }, [restaurantId, secret, tableId, sessionReload])
+
+  const { orders } = useRealtimeOrders(sessionId, { includeAlerts: false })
+  const { items: menuItems } = useMenuItems(sessionId)
+  // Lookup for translated names on past order lines (order rows store only a snapshot).
+  const menuById = useMemo(() => Object.fromEntries((menuItems || []).map(m => [String(m.id), m])), [menuItems])
+  const { deals } = useDeals(sessionId, { activeOnly: true })
+
+  const myOrders = useMemo(() => {
+    const map = {}
+    pinnedOrders.forEach(o => { if (myOrderIds.includes(o.id)) map[o.id] = o })
+    orders.forEach(o => { if (myOrderIds.includes(o.id)) map[o.id] = o })
+    return Object.values(map).sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+  }, [orders, myOrderIds, pinnedOrders])
+
+  const statusKey = myOrders.map(o => `${o.id}:${o.status}`).join('|')
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadRiders() {
+      const deliveries = myOrders.filter(o => o.fulfillment === 'delivery' && o.assigned_rider_id)
+      const pairs = await Promise.all(deliveries.map(async o => {
+        const { data } = await supabase.rpc('customer_order_rider_public', { p_order_id: o.id })
+        return [o.id, data || null]
+      }))
+      if (!cancelled) setRiderInfo(Object.fromEntries(pairs))
+    }
+    if (myOrders.length) loadRiders()
+    return () => { cancelled = true }
+  }, [statusKey, myOrders.length])
+
+  useEffect(() => {
+    myOrders.forEach(o => {
+      if (o.status === 'cooking' && lastStatusRef.current[o.id] !== 'cooking') {
+        setShowChefPopup(true)
+      }
+      lastStatusRef.current[o.id] = o.status
+    })
+  }, [myOrders])
+
+  if (!restaurantId || !secret || !tableId) {
+    return <NotFound message={t('cp_missing_qr')} />
+  }
+
+  if (sessionState === 'loading') {
+    return (
+      <div className="screen" role="status" aria-label={t('cp_loading')} style={{ alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ width: '100%', maxWidth: 420, display: 'grid', gap: 12 }}>
+          <Skeleton height={28} width="60%" />
+          <Skeleton height={16} width="90%" />
+          <Skeleton height={72} />
+          <Skeleton height={72} />
+        </div>
+      </div>
+    )
+  }
+  if (sessionState === 'invalid') {
+    return (
+      <NotFound
+        message={t('cp_invalid_session')}
+        onRetry={() => { setSessionState('loading'); setSessionReload(n => n + 1) }}
+      />
+    )
+  }
+
+  const addItem = (item) => {
+    setCart(prev => ({
+      ...prev,
+      [item.id]: { ...item, qty: (prev[item.id]?.qty || 0) + 1 }
+    }))
+  }
+  const removeItem = (item) => {
+    setCart(prev => {
+      const existing = prev[item.id]
+      if (!existing) return prev
+      if (existing.qty <= 1) {
+        const { [item.id]: _drop, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [item.id]: { ...existing, qty: existing.qty - 1 } }
+    })
+  }
+
+  const sendOrder = async (contact = {}) => {
+    const items = Object.values(cart).map(({ id, qty, isDeal }) => {
+      const raw = String(id)
+      return raw.startsWith('deal:') || isDeal
+        ? { id: raw.replace(/^deal:/, ''), qty, type: 'deal' }
+        : { id: raw, qty, type: 'item' }
+    })
+    if (items.length === 0) return
+    setSending(true)
+    setOrderError('')
+
+    const fulfillment = contact.fulfillment || (isTakeaway(tableId) ? 'takeaway' : null)
+    let finalNote = note || ''
+    if (fulfillment === 'delivery') {
+      const bits = [
+        'DELIVERY',
+        contact.areaName && `Area: ${contact.areaName}`,
+        contact.customerName && `Name: ${contact.customerName}`,
+        contact.phone && `Phone: ${contact.phone}`,
+        contact.address && `Address: ${contact.address}`,
+        brandDeliveryMeta.branchName && `Branch: ${brandDeliveryMeta.branchName}`,
+      ].filter(Boolean)
+      finalNote = bits.join('\n') + (finalNote ? `\n${finalNote}` : '')
+    } else if (fulfillment === 'takeaway') {
+      const bits = ['TAKEAWAY']
+      if (contact.customerName) bits.push(`Name: ${contact.customerName}`)
+      if (contact.phone) bits.push(`Phone: ${contact.phone}`)
+      finalNote = bits.join('\n') + (finalNote ? `\n${finalNote}` : '')
+    }
+    if (contact.paymentMethod === 'online') {
+      finalNote = (finalNote ? finalNote + '\n' : '') + 'PAYMENT: Online / QR'
+    } else if (contact.paymentMethod === 'cash') {
+      finalNote = (finalNote ? finalNote + '\n' : '') + 'PAYMENT: Cash'
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('place_customer_order', {
+        p_session_id: sessionId,
+        p_table_id: tableId,
+        p_items: items,
+        p_note: finalNote,
+        p_fulfillment: fulfillment,
+        p_customer_name: contact.customerName || null,
+        p_customer_phone: contact.phone || null,
+        p_customer_address: contact.address || null,
+        p_area_name: contact.areaName || brandDeliveryMeta.areaName || null,
+      })
+      if (error) {
+        console.error('Order insert failed:', error)
+        const msg = error.message || ''
+        setOrderError(msg.includes('RATE_LIMIT') ? t('cp_err_rate') : friendlyOrderError(msg, t))
+        return
+      }
+      if (data) {
+        const nextIds = [...new Set([...myOrderIds, data.id])]
+        setMyOrderIds(nextIds)
+        setPinnedOrders(prev => [...prev.filter(o => o.id !== data.id), data])
+        try { localStorage.setItem(`tableorder:activeOrders:${sessionId}:${tableId}`, JSON.stringify(nextIds)) } catch {}
+        setCart({})
+        setNote('')
+        setCartOpen(false)
+        setJustPlaced(true)
+        setView('orders')
+        setOrderError('')
+      }
+    } catch (err) {
+      console.error('Order send error:', err)
+      setOrderError(t('cp_err_failed'))
+    } finally {
+      setSending(false)
+    }
+  }
+
+
+  const rateOrder = async (orderId, stars) => {
+    const { error } = await supabase.rpc('customer_rate_order', { p_order_id: orderId, p_rating: stars })
+    if (error) {
+      console.warn('Rating failed:', error)
+      return
+    }
+    const next = myOrderIds.filter(id => id !== orderId)
+    setMyOrderIds(next)
+    setPinnedOrders(prev => prev.filter(o => o.id !== orderId))
+    try {
+      localStorage.setItem(`tableorder:activeOrders:${sessionId}:${tableId}`, JSON.stringify(next))
+    } catch { /* ignore */ }
+    if (next.length === 0) setView('menu')
+  }
+
+  const clearCompletedOrder = (orderId) => {
+    const next = myOrderIds.filter(id => id !== orderId)
+    setMyOrderIds(next)
+    setPinnedOrders(prev => prev.filter(o => o.id !== orderId))
+    try {
+      localStorage.setItem(`tableorder:activeOrders:${sessionId}:${tableId}`, JSON.stringify(next))
+    } catch { /* ignore */ }
+    if (next.length === 0) setView('menu')
+  }
+
+  const toggleColorMode = () => {
+    const next = colorMode === 'dark' ? 'light' : 'dark'
+    setColorMode(next)
+    applyCustomerColorMode(next)
+  }
+
+  const waNumber = (() => {
+    const raw = restaurant?.whatsapp || restaurant?.theme?.whatsapp
+    if (!raw) return null
+    let d = String(raw).trim().replace(/[^\d+]/g, '')
+    if (d.startsWith('+')) d = d.slice(1)
+    d = d.replace(/\D/g, '')
+    if (d.startsWith('0') && d.length >= 10) d = '92' + d.slice(1)
+    return d.length >= 11 ? d : null
+  })()
+
+  const raiseAlert = async (type) => {
+    const { error } = await supabase.rpc('customer_raise_alert', {
+      p_session_id: sessionId,
+      p_table_id: tableId,
+      p_alert_type: type,
+    })
+    if (error) {
+      const m = error.message || ''
+      if (m.includes('RATE_LIMIT')) throw new Error('RATE_LIMIT')
+      throw new Error(m || 'Request failed')
+    }
+  }
+
+
+  if (!langReady) return <LanguageGate onDone={() => setLangReady(true)} />
+
+  return (
+    <MotionConfig reducedMotion="user">
+    <div className="screen brand-surface" style={{ color: 'var(--ink)' }}>
+      <ChefPopup show={showChefPopup} onDone={() => setShowChefPopup(false)} />
+      <PromoPopup sessionId={sessionId} />
+
+      <motion.header
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: EASE }}
+        className="customer-header pm-header" style={{
+        padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10,
+        background: 'linear-gradient(135deg, var(--brand-ink), color-mix(in srgb, var(--brand-ink) 80%, #000))', color: '#fff',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
+      }}>
+        {restaurant?.logo_url ? (
+          <img src={restaurant.logo_url} alt="" style={{
+            width: 40, height: 40, borderRadius: 11, objectFit: 'cover',
+            boxShadow: '0 2px 8px rgba(0,0,0,.2)', background: 'var(--surface)', flex: '0 0 auto',
+          }} />
+        ) : (
+          <div style={{
+            width: 40, height: 40, borderRadius: 11, background: 'rgba(255,255,255,.12)',
+            display: 'grid', placeItems: 'center', fontSize: 16, flex: '0 0 auto',
+          }}>{(restaurant?.restaurant_name || 'R').trim().charAt(0).toUpperCase()}</div>
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: 'var(--display)', fontWeight: 700, fontSize: 16,
+            letterSpacing: '-0.02em', lineHeight: 1.2,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            color: '#fff',
+          }}>
+            {restaurant?.restaurant_name || restaurantId.replace(/-/g, ' ')}
+          </div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, opacity: 0.85, marginTop: 2, color: '#fff' }}>
+            {brandDeliveryMeta.branchName
+              ? t('cp_delivery_label', { area: brandDeliveryMeta.areaName || locationLabel(tableId) })
+              : locationLabel(tableId)}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
+          {waNumber && (
+            <a
+              href={`https://wa.me/${waNumber}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={t('cp_whatsapp')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                background: '#25D366', color: '#fff', textDecoration: 'none',
+                borderRadius: 999, padding: '6px 10px', fontSize: 11, fontWeight: 700,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+              {t('cp_chat')}
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={toggleColorMode}
+            aria-label={t('cp_toggle_theme')}
+            title={colorMode === 'dark' ? t('cp_light') : t('cp_dark')}
+            style={{
+              width: 34, height: 34, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.25)',
+              background: 'rgba(255,255,255,0.12)', color: '#fff', fontSize: 14, cursor: 'pointer',
+            }}
+          >{colorMode === 'dark' ? t('cp_light') : t('cp_dark')}</button>
+          <button type="button" onClick={() => setLangReady(false)} aria-label={t('cp_lang_btn')} style={{ background: 'rgba(255,255,255,0.12)', color: '#fff', border: 'none', borderRadius: 999, padding: '6px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{lang.toUpperCase()}</button>
+          {myOrderIds.length > 0 && (
+            <button
+              onClick={() => setView(v => (v === 'menu' ? 'orders' : 'menu'))}
+              style={{
+                background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)',
+                borderRadius: 999, padding: '7px 10px', fontSize: 11, fontWeight: 600
+              }}>
+              {view === 'menu' ? t('cp_orders_btn', { n: myOrderIds.length }) : t('cp_menu_btn')}
+            </button>
+          )}
+        </div>
+      </motion.header>
+
+
+      <AnimatePresence mode="wait" initial={false}>
+      {view === 'orders' ? (
+        <motion.div key="orders" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} style={{ padding: 14, color: 'var(--ink)' }}>
+          <AnimatePresence>
+            {justPlaced && <OrderSuccess key="placed" onDismiss={() => setJustPlaced(false)} />}
+          </AnimatePresence>
+          {orderError && (
+            <div style={{ color: 'var(--clay)', fontSize: 13, marginBottom: 10 }}>{orderError}</div>
+          )}
+          {myOrders.map((order, idx) => {
+            const isDelivery = order.fulfillment === 'delivery' || String(order.table_id || '').startsWith('delivery')
+            const done = order.status === 'served'
+            const hasGps = order.rider_lat != null && order.rider_lng != null
+            const mapSrc = hasGps
+              ? `https://maps.google.com/maps?q=${order.rider_lat},${order.rider_lng}&z=15&output=embed`
+              : null
+            return (
+              <motion.div key={order.id} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(idx, 8) * 0.06, duration: 0.3, ease: EASE }} style={{
+                background: 'var(--surface)', border: '1px solid var(--border, var(--line))', borderRadius: 12,
+                padding: 14, marginBottom: 12, color: 'var(--ink)',
+              }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>
+                  {isDelivery ? t('cp_delivery_upper') : order.fulfillment === 'takeaway' ? t('cp_takeaway_upper') : locationLabel(order.table_id)}
+                  {' · '}{order.status === 'served' ? (order.paid_at ? t('cp_paid') : t('cp_billing_pending')) : statusLabel(order.status)}
+                </div>
+                {order.status === 'cooking' && order.prep_ready_at && (
+                  <div style={{ marginTop: 6 }}><OrderTimer readyAt={order.prep_ready_at} /></div>
+                )}
+                {order.status === 'served' && !order.paid_at && (
+                  <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{t('cp_pay_at_counter')}</div>
+                )}
+                <div style={{ marginTop: 8, fontSize: 13, color: 'var(--ink)' }}>
+                  {normalizeOrderItems(order.items).map((it, i) => (
+                    <div key={i} style={{ color: 'var(--ink)' }}>{it.qty} × {itemName(menuById[String(it.id)] || it, lang)}</div>
+                  ))}
+                </div>
+                <div style={{ fontFamily: 'var(--mono)', marginTop: 6, color: 'var(--ink)' }}>
+                  PKR {Number(order.total).toFixed(0)}
+                </div>
+                {isDelivery && riderInfo[order.id] && (
+                  <div style={{ marginTop: 10, padding: 10, borderRadius: 12, background: 'var(--brand-soft)', border: '1px solid var(--border, var(--line))' }}>
+                    <div style={{ fontWeight: 900, fontSize: 12, marginBottom: 6 }}>{t('cp_your_rider')}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                      {riderInfo[order.id].photo_url ? <img src={riderInfo[order.id].photo_url} alt="" style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover' }} /> : <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'var(--brand-primary)', color: 'var(--brand-primary-text)', display: 'grid', placeItems: 'center', fontWeight: 900 }}>{(riderInfo[order.id].name || 'R')[0]}</div>}
+                      <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>{riderInfo[order.id].name}</div><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>★ {riderInfo[order.id].avg_rating ?? t('cp_rider_new')}</div></div>
+                      {riderInfo[order.id].phone && <a href={`tel:${riderInfo[order.id].phone}`} style={{ textDecoration: 'none', fontSize: 12, fontWeight: 800 }}>{t('cp_call')}</a>}
+                      {riderInfo[order.id].whatsapp && <a href={`https://wa.me/${String(riderInfo[order.id].whatsapp).replace(/\D/g,'').replace(/^0/,'92')}`} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', fontSize: 12, fontWeight: 800 }}>{t('cp_whatsapp')}</a>}
+                    </div>
+                  </div>
+                )}
+
+                {isDelivery && !done && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>
+                      {hasGps ? t('cp_rider_live') : t('cp_rider_wait')}
+                    </div>
+                    {mapSrc && (
+                      <iframe
+                        title="rider-map"
+                        src={mapSrc}
+                        style={{ width: '100%', height: 180, border: 0, borderRadius: 10 }}
+                        loading="lazy"
+                      />
+                    )}
+                    {hasGps && (
+                      <a
+                        href={`https://www.google.com/maps?q=${order.rider_lat},${order.rider_lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ display: 'block', marginTop: 8, fontSize: 13, color: 'var(--sky)', fontWeight: 600 }}
+                      >{t('cp_open_maps')}</a>
+                    )}
+                    <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: 'var(--brand-soft)', color: 'var(--brand-ink)', fontSize: 12, fontWeight: 700 }}>
+                      {t('cp_delivery_done_note')}
+                    </div>
+                  </div>
+                )}
+
+                {done && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ fontSize: 13, color: 'var(--sage)', fontWeight: 700 }}>{t('cp_completed')}</div>
+                    {isDelivery ? (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 12, marginBottom: 6, color: 'var(--text-secondary)' }}>{t('cp_rate_rider')}</div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {[1, 2, 3, 4, 5].map(s => (
+                            <button
+                              key={s}
+                              onClick={() => rateOrder(order.id, s)}
+                              style={{
+                                width: 40, height: 40, borderRadius: 8,
+                                border: order.rating === s ? '2px solid var(--mustard)' : '1px solid var(--border, var(--line))',
+                                background: order.rating === s ? 'var(--brand-soft)' : 'var(--surface)',
+                                color: 'var(--ink)',
+                                fontSize: 18
+                              }}
+                            >{s}★</button>
+                          ))}
+                        </div>
+                        {order.rating && (
+                          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-muted)' }}>{t('cp_thanks', { n: order.rating })}</div>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => clearCompletedOrder(order.id)}
+                        style={{
+                          marginTop: 10, width: '100%', background: 'var(--paper-dim)',
+                          border: '1px solid var(--border, var(--line))', borderRadius: 999, padding: '10px 0',
+                          fontWeight: 600, color: 'var(--ink)',
+                        }}
+                      >{t('cp_done_back')}</button>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+            )
+          })}
+          <button
+            onClick={() => setView('menu')}
+            style={{
+              width: '100%', marginTop: 8, background: 'var(--brand-primary)',
+              color: 'var(--brand-primary-text)', border: 'none', borderRadius: 999,
+              padding: '12px 0', fontWeight: 700
+            }}
+          >{t('cp_order_more')}</button>
+
+          <div style={{ marginTop: 16, fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>
+            {t('cp_wait_note')}
+          </div>
+          <NameMeaning menuItems={menuItems} />
+          <TicTacToe />
+          <BallJump />
+        </motion.div>
+      ) : (
+        <motion.div key="menu" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+          <div style={{
+            margin: '10px 14px 6px',
+            background: 'var(--surface)',
+            border: '1px solid var(--border, var(--line))',
+            borderRadius: 14,
+            padding: '10px 12px',
+            color: 'var(--ink)',
+          }}>
+            <MoodSelector value={mood} onChange={setMood} />
+            <NoteBar note={note} onNoteChange={setNote} />
+          </div>
+          <MenuList
+            items={menuItems}
+            deals={deals}
+            mood={mood}
+            cart={cart}
+            onAdd={addItem}
+            onRemove={removeItem}
+          />
+          <NameMeaning menuItems={menuItems} />
+          <CartBar cart={cart} onOpen={() => setCartOpen(true)} />
+          <AnimatePresence>
+          {cartOpen && (
+            <CartModal
+              key="cart-modal"
+              cart={cart}
+              note={note}
+              tableId={tableId}
+              onAdd={addItem}
+              onRemove={removeItem}
+              onClose={() => setCartOpen(false)}
+              onSend={sendOrder}
+              sending={sending}
+              areas={areas}
+              taxPercent={Number(restaurant?.tax_percent) || 0}
+              taxLabel={restaurant?.tax_label || 'Tax'}
+              paymentOnline={!!(restaurant?.theme?.paymentOnline)}
+              paymentCash={restaurant?.theme?.paymentCash !== false}
+              paymentQrUrl={restaurant?.theme?.paymentQrUrl || ''}
+              paymentMethodName={restaurant?.theme?.paymentMethodName || 'Online payment'}
+              paymentAccountTitle={restaurant?.theme?.paymentAccountTitle || ''}
+              paymentInstructions={restaurant?.theme?.paymentInstructions || ''}
+              defaultAreaName={brandDeliveryMeta.areaName || ''}
+            />
+          )}
+          </AnimatePresence>
+          {orderError && (
+            <div style={{ margin: '8px 14px', color: 'var(--clay)', fontSize: 13 }}>{orderError}</div>
+          )}
+        </motion.div>
+      )}
+      </AnimatePresence>
+
+      <FloatingActions
+        onWater={isTakeaway(tableId) ? null : () => raiseAlert('water')}
+        onWaiter={isTakeaway(tableId) ? null : () => raiseAlert('waiter')}
+        onBill={isTakeaway(tableId) ? null : () => raiseAlert('bill')}
+        showServiceButtons={!isTakeaway(tableId)}
+      />
+    </div>
+    </MotionConfig>
+  )
+}
+
+function normalizeOrderItems(items) {
+  if (Array.isArray(items)) return items
+  if (typeof items === 'string') {
+    try {
+      const parsed = JSON.parse(items)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+function friendlyOrderError(message, t) {
+  const m = String(message || '')
+  if (m.includes('Customer session expired')) return t('cp_err_session')
+  if (m.includes('Menu item unavailable') || m.includes('Deal unavailable')) return t('cp_err_unavailable')
+  if (m.includes('Invalid order items')) return t('cp_err_invalid')
+  if (m.includes('Delivery details required')) return t('cp_err_delivery')
+  if (m.includes('RATE_LIMIT')) return t('cp_err_rate')
+  return t('cp_err_generic')
+}
