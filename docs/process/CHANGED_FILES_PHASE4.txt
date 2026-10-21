@@ -1,0 +1,5 @@
+src/components/GuideBookLauncher.jsx
+src/components/GuideBook.jsx
+tests/i18n.test.mjs
+I18N_PHASE4_REPORT.md
+CHANGED_FILES_PHASE4.txt

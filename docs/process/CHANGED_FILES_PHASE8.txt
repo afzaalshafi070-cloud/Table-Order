@@ -1,0 +1,5 @@
+Phase 8 changed/new files
+- scripts/check-print-output.mjs (new source-level KOT/Bill print regression check)
+- scripts/smoke-browser.mjs (new Chromium smoke test for built app)
+- package.json (test:print, test:browser:smoke, release:check scripts)
+- PHASE8_RELEASE_TEST_REPORT.md (new, accurately records blocked/unrun tests)

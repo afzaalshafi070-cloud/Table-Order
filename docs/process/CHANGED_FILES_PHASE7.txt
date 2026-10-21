@@ -1,0 +1,6 @@
+Phase 7 changed/new files
+- src/i18n/locale.js (new)
+- src/components/PrintableTicket.jsx (localized date/time)
+- src/styles/global.css (thermal print CSS)
+- tests/i18n.test.mjs (locale and print tests)
+- PHASE7_NOTES.md (new)

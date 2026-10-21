@@ -1,0 +1,17 @@
+Table Order i18n Phase 1 - changed/new files
+============================================
+
+- EDIT src/i18n/languages.js
+- EDIT src/i18n/index.js
+- EDIT src/i18n/strings.js
+- EDIT src/i18n/strings_app.js
+- NEW  src/guide/ur-roman.md
+- NEW  src/components/GuideBookLauncher.jsx
+- EDIT src/components/OrderCard.jsx
+- EDIT src/components/PrintableTicket.jsx
+- EDIT src/App.jsx
+- NEW  scripts/audit-i18n.mjs
+- NEW  I18N_PHASE1_AUDIT.md
+- NEW  CHANGED_FILES.txt
+
+No SQL files were changed. This is a frontend-only phase.

@@ -1,0 +1,2 @@
+-- Deals are now included in supabase/schema.sql.
+-- Do not run this file separately. Use schema.sql as the single source of truth.

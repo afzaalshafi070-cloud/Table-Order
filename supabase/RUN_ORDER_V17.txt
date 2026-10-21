@@ -1,0 +1,12 @@
+TABLE ORDER v17 — SQL RUN ORDER (Supabase SQL Editor, top to bottom)
+
+1. PHASE15_AUDIT_DELETE.sql        (admin audit delete RPC)
+2. PHASE16_MENU_TRANSLATIONS.sql   (menu translations column + staff_login copy)
+
+Only run the files listed above. Already-run files (PHASE8E, PHASE9-14, ...) do not need to run again.
+Do NOT run PHASE8B_ROLLBACK_RIDER_LOGIN.sql (breaks rider login).
+
+PHASE16 replaces staff_login (same as PHASE14 except the menu copy line). If PHASE14 was never run,
+run PHASE13 and PHASE14 first, then PHASE15 and PHASE16.
+
+After SQL: run `npm run build`, then deploy to Cloudflare Pages.
