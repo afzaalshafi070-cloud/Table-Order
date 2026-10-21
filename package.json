@@ -1,0 +1,33 @@
+{
+  "name": "table-order-saas",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "audit:i18n": "node scripts/audit-i18n.mjs",
+    "test:i18n": "node --test tests/i18n.test.mjs",
+    "audit:i18n:full": "node scripts/audit-i18n-detailed.mjs",
+    "test:i18n:all": "npm run test:i18n && npm run audit:i18n:full",
+    "audit:i18n:release": "node scripts/audit-i18n-release.mjs",
+    "test:print": "node scripts/check-print-output.mjs",
+    "test:browser:smoke": "node scripts/smoke-browser.mjs",
+    "release:check": "npm run test:i18n && npm run test:print && npm run audit:i18n:release && npm run build"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "colorthief": "^2.4.0",
+    "framer-motion": "^11.11.1",
+    "jspdf": "^2.5.1",
+    "qrcode": "^1.5.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.6"
+  }
+}
