@@ -242,6 +242,8 @@ export default function CounterDashboard() {
       const msg = err?.message || err?.error_description || String(err) || ''
       if (msg.includes('RESTAURANT_ALREADY_ACTIVE')) {
         setLoginError(t('err_active_elsewhere'))
+      } else if (msg.includes('RATE_LIMIT')) {
+        setLoginError('Bahut zyada galat PIN. 10 minute baad dobara koshish karein.')
       } else if (msg.includes('INVALID_PIN') || msg.includes('Invalid PIN')) {
         setLoginError(t('err_wrong_pin'))
       } else if (msg.includes('NEW_DEVICE_RECOVERY_CODE_REQUIRED')) {
