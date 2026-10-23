@@ -262,7 +262,7 @@ export default function RiderApp() {
         p_pin: pin.trim(),
       })
       if (err) throw err
-      if (!data?.ok || !data?.portal_token) throw new Error('LOGIN_FAILED')
+      if (!data?.ok || !data?.portal_token) throw new Error(data?.code || 'LOGIN_FAILED')
       savePortalToken(data.portal_token)
       applyData(data)
       setPin('')
@@ -272,7 +272,8 @@ export default function RiderApp() {
       // Show the real server code so a failed login can be diagnosed from a screenshot.
       const code = m.slice(0, 160)
       setError(
-        m.includes('INVALID_PIN') ? 'PIN ghalat hai.'
+        m.includes('RATE_LIMIT') ? 'Bahut zyada galat PIN. 10 minute baad dobara koshish karein.'
+        : m.includes('INVALID_PIN') ? 'PIN ghalat hai.'
         : m.includes('LINK_REVOKED') ? 'Ye rider link delete ho chuka hai.'
         : m.includes('RIDER_NOT_FOUND') ? 'Rider ya link active nahi hai. Admin se check karein.'
         : `Login nahi ho saka. Link ya PIN check karein. [${code || 'no-message'}]`
