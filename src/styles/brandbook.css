@@ -1,0 +1,62 @@
+/* Brand Book & Printables — screen styles */
+.bb-root { display: flex; flex-direction: column; gap: 14px; }
+.bb-head { display: flex; flex-direction: column; gap: 4px; }
+.bb-title { margin: 0; font-size: 18px; font-weight: 800; color: var(--ink, #1f1b16); }
+.bb-sub { margin: 0; font-size: 13px; color: var(--muted, #6b6258); }
+
+.bb-tabs { display: flex; gap: 6px; padding: 6px; background: var(--paper-dim, #f5f5f4); border-radius: 14px; width: fit-content; max-width: 100%; flex-wrap: wrap; }
+.bb-tabs button { border: none; border-radius: 999px; padding: 8px 14px; font-size: 12px; font-weight: 700; cursor: pointer; background: var(--paper, #fff); color: var(--ink, #1f1b16); }
+.bb-tabs button.on { background: var(--brand-primary, #e2a13a); color: var(--brand-primary-text, #111); }
+
+.bb-warn { padding: 10px; border-radius: 10px; background: #fef2f2; color: #b91c1c; font-size: 13px; }
+
+.bb-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (min-width: 900px) { .bb-grid { grid-template-columns: 300px minmax(0, 1fr); } }
+
+.bb-preview-col { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.bb-preview { position: relative; overflow: hidden; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.12); border: 1px solid var(--line, #e7e2da); max-width: 100%; }
+.bb-note { margin: 0; font-size: 12px; color: var(--muted, #6b6258); line-height: 1.4; }
+
+.bb-controls { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.bb-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink, #1f1b16); }
+.bb-field > span { font-weight: 700; }
+.bb-field input[type="text"], .bb-field input:not([type]), .bb-field textarea, .bb-field select, .bb-field input[type="number"] {
+  width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line, #d9d3c9); background: var(--surface-elevated, #fff); color: var(--ink, #1f1b16); font-size: 14px; font-family: inherit;
+}
+.bb-field input[type="color"] { width: 44px; height: 36px; padding: 0; border: none; background: none; cursor: pointer; }
+.bb-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bb-muted { color: var(--muted, #6b6258); font-size: 12px; }
+.bb-link { border: none; background: none; color: var(--brand-deep, #7a4d00); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
+
+.bb-layouts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+@media (min-width: 520px) { .bb-layouts { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.bb-layout { border: 1px solid var(--line, #d9d3c9); background: var(--surface-elevated, #fff); color: var(--ink, #1f1b16); border-radius: 10px; padding: 8px 6px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.bb-layout.on { border-color: var(--brand-primary, #e2a13a); box-shadow: inset 0 0 0 2px var(--brand-primary, #e2a13a); }
+
+.bb-print { border: none; border-radius: 12px; padding: 11px 16px; background: var(--brand-primary, #e2a13a); color: var(--brand-primary-text, #111); font-size: 14px; font-weight: 800; cursor: pointer; }
+.bb-print:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* QR frame: always white so phones can scan it on any brand colour */
+.bb-qr-box { background: #ffffff; border-radius: 12px; display: flex; align-items: center; justify-content: center; padding: 10px; box-sizing: border-box; }
+.bb-qr-box img { display: block; }
+
+/* Print-only pieces stay hidden on screen */
+.bb-print-root { display: none; }
+
+/* Preview fits the card scale transform */
+.bb-card-abs { position: absolute; left: 50%; top: 50%; }
+
+@media print {
+  @page { size: A4 landscape; margin: 0; }
+  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  body > *:not(.bb-print-root) { display: none !important; }
+  .bb-print-root { display: block !important; position: absolute; left: 0; top: 0; width: 297mm; }
+  .bb-print-root, .bb-print-root * { visibility: visible !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bb-sheet { width: 297mm; height: 210mm; display: grid; grid-template-columns: 148.5mm 148.5mm; grid-template-rows: 105mm 105mm; page-break-after: always; break-after: page; }
+  .bb-sheet:last-child { page-break-after: auto; break-after: auto; }
+  .bb-cell { position: relative; width: 148.5mm; height: 105mm; overflow: hidden; box-sizing: border-box; outline: 0.2mm dashed #bdbdbd; outline-offset: -0.2mm; }
+  .bb-cell.bb-center { display: flex; align-items: center; justify-content: center; }
+  /* Card is 88.9 x 127 mm (portrait). Turned 90 deg it fits a 148.5 x 105 mm cell. */
+  .bb-turn { position: absolute; left: 50%; top: 50%; width: 127mm; height: 88.9mm; transform: translate(-50%, -50%); }
+  .bb-card-abs { position: absolute; left: 50%; top: 50%; width: 336px; height: 480px; transform: translate(-50%, -50%) rotate(90deg); transform-origin: center; }
+}
