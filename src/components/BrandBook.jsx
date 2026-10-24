@@ -143,6 +143,7 @@ const DEFAULTS = {
   message: '',
   cta: '',
   bg: '',        // empty = restaurant brand colour
+  logoBg: 'transparent', // 'transparent' | 'chip'
   from: 1,
   to: 6,
 }
@@ -261,7 +262,7 @@ function useFontLoader(pairIndex, rtl) {
    the same proportions. Text colour is set automatically for contrast.
    The restaurant logo sits at the top of every layout; transparent PNGs work best. */
 function CardFace({ d }) {
-  const { layout, bg, fg, hf, bf, name, heading, message, cta, qr, logo, W, H, rtl } = d
+  const { layout, bg, fg, hf, bf, name, heading, message, cta, qr, logo, logoBg, W, H, rtl } = d
   const k = Math.min(W / REF_W, H / REF_H)
   const z = (v) => Math.round(v * k)
   const band = shade(bg, 0.18)
@@ -292,22 +293,28 @@ function CardFace({ d }) {
   const Msg = ({ align = 'center', size = 15 }) => (
     <p style={b({ fontSize: z(size), textAlign: align, margin: z(14) + 'px 0 0' })}>{message}</p>
   )
-  // Logo: align 'center' | 'start' | 'end'. Keeps transparent PNG as is (no box).
-  const Logo = ({ align = 'center', size = 150, mb = 12 }) => {
+  // Logo: align 'center' | 'start' | 'end'. Fixed max box, aspect ratio kept (object-fit: contain).
+  // logoBg 'chip' puts a soft white rounded backdrop behind a dark logo; default is fully transparent.
+  const Logo = ({ align = 'center', size = 130, mb = 12 }) => {
     if (!logo) return null
     const side = align === 'start' ? 'flex-start' : align === 'end' ? 'flex-end' : 'center'
+    const maxW = z(size)
+    const maxH = z(Math.round(size * 0.4))
+    const chip = logoBg === 'chip'
     return (
-      <img
-        src={logo}
-        alt=""
-        style={{
-          display: 'block', alignSelf: side,
-          marginLeft: align === 'center' ? 'auto' : undefined,
-          marginRight: align === 'center' ? 'auto' : undefined,
-          maxWidth: z(size), maxHeight: z(size * 0.45), width: 'auto', height: 'auto',
-          objectFit: 'contain', marginBottom: z(mb),
-        }}
-      />
+      <div style={{ display: 'flex', alignSelf: side, marginLeft: align === 'center' ? 'auto' : undefined, marginRight: align === 'center' ? 'auto' : undefined, marginBottom: z(mb) }}>
+        <img
+          src={logo}
+          alt=""
+          style={{
+            display: 'block', width: 'auto', height: 'auto',
+            maxWidth: maxW, maxHeight: maxH, objectFit: 'contain',
+            background: chip ? '#FFFFFF' : 'transparent',
+            padding: chip ? z(6) : 0, borderRadius: chip ? z(10) : 0,
+            boxSizing: 'content-box', border: 'none', outline: 'none', boxShadow: 'none',
+          }}
+        />
+      </div>
     )
   }
 
@@ -548,12 +555,14 @@ function CardSheet({ cfg }) {
     transformOrigin: '50% 50%',
   }
   return (
-    <div className="bb-sheet bb-sheet-cards">
-      {[0, 1, 2, 3].map((i) => (
-        <div className="bb-cell bb-cell-cards" key={i}>
-          <div style={slot}><Card {...cfg} /></div>
-        </div>
-      ))}
+    <div className="bb-page bb-page-cards">
+      <div className="bb-sheet bb-sheet-cards">
+        {[0, 1, 2, 3].map((i) => (
+          <div className="bb-cell bb-cell-cards" key={i}>
+            <div style={slot}><Card {...cfg} /></div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -561,16 +570,18 @@ function CardSheet({ cfg }) {
 // A4 portrait sticker sheet: up to 6 stickers, 2 x 3
 function StickerPage({ items }) {
   return (
-    <div className="bb-sheet bb-sheet-stickers">
-      {Array.from({ length: STICKERS_PER_PAGE }, (_, i) => (
-        <div className="bb-cell bb-cell-stickers bb-center" key={i}>
-          {items[i] ? (
-            <div style={{ width: STICKER, height: STICKER, transform: `scale(${STICKER_PRINT_SCALE})`, transformOrigin: '50% 50%', flexShrink: 0 }}>
-              <Sticker {...items[i]} />
-            </div>
-          ) : null}
-        </div>
-      ))}
+    <div className="bb-page bb-page-stickers">
+      <div className="bb-sheet bb-sheet-stickers">
+        {Array.from({ length: STICKERS_PER_PAGE }, (_, i) => (
+          <div className="bb-cell bb-cell-stickers bb-center" key={i}>
+            {items[i] ? (
+              <div style={{ width: STICKER, height: STICKER, transform: `scale(${STICKER_PRINT_SCALE})`, transformOrigin: '50% 50%', flexShrink: 0 }}>
+                <Sticker {...items[i]} />
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -680,7 +691,7 @@ export default function BrandBook({ session }) {
   const tableUrl = (n) => (ready ? `${origin}/order/${restaurantId}/${qrSecret}/T${n}` : '')
 
   const cardCfg = {
-    cw, ch, W: cw, H: ch, rot: fit.rot, scale: fit.scale, url: deliveryUrl, logo,
+    cw, ch, W: cw, H: ch, rot: fit.rot, scale: fit.scale, url: deliveryUrl, logo, logoBg: s.logoBg,
     layout: LAYOUTS[layoutIndex].id, bg, fg, hf, bf, name, heading, message, cta, rtl,
   }
 
@@ -792,6 +803,13 @@ export default function BrandBook({ session }) {
               <input value={s.cta} placeholder={L.cta} maxLength={40} onChange={(e) => update({ cta: e.target.value })} />
             </label>
             {bgField}
+            <label className="bb-field">
+              <span>Logo ka backdrop</span>
+              <select value={s.logoBg} onChange={(e) => update({ logoBg: e.target.value })}>
+                <option value="transparent">Transparent (default)</option>
+                <option value="chip">Soft white chip (dark logo ke liye)</option>
+              </select>
+            </label>
             <div className="bb-field">
               <span>Layout (10)</span>
               <div className="bb-layouts">
