@@ -41,38 +41,33 @@
 
 /* QR frame: always white so phones can scan it on any colour */
 .bb-qr-box { background: #ffffff; border-radius: 12px; display: flex; align-items: center; justify-content: center; padding: 10px; box-sizing: border-box; }
-.bb-qr-box img { display: block; }
+.bb-qr-box svg { display: block; }
 
 /* Print-only pieces stay hidden on screen */
 .bb-print-root { display: none; }
 
 @media print {
-  /* Each sheet sits in a page container smaller than the paper, so browser headers,
-     footers and default margins can never push a row onto the next page.
-     zoom (not transform) shrinks the layout box, so pagination really changes. */
-  @page { size: A4 landscape; margin: 0; }
+  /* A4 portrait, zero margins. Every sheet is exactly one page: no zoom, no transform, no rotation. */
+  @page { size: A4 portrait; margin: 0; }
 
   /* The dashboard uses fixed heights and hidden overflow. Release them for print. */
   html, body, #root { height: auto !important; min-height: 0 !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
   body > *:not(.bb-print-root) { display: none !important; }
 
-  .bb-print-root { display: block !important; position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; }
+  .bb-print-root { display: block !important; position: absolute; left: 0; top: 0; width: 210mm; margin: 0; padding: 0; }
   .bb-print-root, .bb-print-root * { visibility: visible !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-  /* Page containers: full paper width, flex-centred, height below the printable area */
-  .bb-page { display: flex; align-items: center; justify-content: center; width: 100%; box-sizing: border-box; overflow: hidden; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
+  /* One page per sheet. Break after each page except the last. */
+  .bb-page { width: 210mm; height: 297mm; overflow: hidden; box-sizing: border-box; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
   .bb-page:last-child { page-break-after: auto; break-after: auto; }
-  .bb-page-cards { height: 180mm; }      /* A4 landscape is 210 mm tall */
-  .bb-page-stickers { height: 266mm; }   /* A4 portrait is 297 mm tall */
 
-  /* Card sheet: 297 x 209 mm, shrunk to 86%, centred */
-  .bb-sheet { position: relative; display: grid; overflow: hidden; box-sizing: border-box; margin: 0 auto; page-break-inside: avoid; break-inside: avoid; }
-  .bb-sheet-cards { width: 297mm; height: 209mm; zoom: 0.86; grid-template-columns: 148.5mm 148.5mm; grid-template-rows: 104.5mm 104.5mm; }
-  .bb-cell-cards { position: relative; width: 148.5mm; height: 104.5mm; overflow: hidden; box-sizing: border-box; outline: 0.15mm dashed #d0d0d0; outline-offset: -0.15mm; }
+  /* Card sheet: strict grid of true-size cards, spare space spread evenly around them */
+  .bb-sheet-cards { display: grid; width: 210mm; height: 297mm; box-sizing: border-box; justify-content: space-evenly; align-content: space-evenly; overflow: hidden; }
+  .bb-card-cell { overflow: hidden; box-sizing: border-box; break-inside: avoid; page-break-inside: avoid; }
 
-  /* Sticker sheet: 209 x 295.5 mm, shrunk to 89%, 2 columns x 3 rows, centred */
-  .bb-sheet-stickers { width: 209mm; height: 295.5mm; zoom: 0.89; grid-template-columns: 104.5mm 104.5mm; grid-template-rows: 98.5mm 98.5mm 98.5mm; }
-  .bb-cell-stickers { position: relative; width: 104.5mm; height: 98.5mm; overflow: hidden; box-sizing: border-box; outline: 0.15mm dashed #d0d0d0; outline-offset: -0.15mm; }
+  /* Sticker sheet: 2 columns x 3 rows, each cell 105 x 99 mm */
+  .bb-sheet-stickers { display: grid; width: 210mm; height: 297mm; box-sizing: border-box; grid-template-columns: 105mm 105mm; grid-template-rows: 99mm 99mm 99mm; overflow: hidden; }
+  .bb-cell-stickers { position: relative; width: 105mm; height: 99mm; overflow: hidden; box-sizing: border-box; }
 
   .bb-center { display: flex; align-items: center; justify-content: center; }
 }
