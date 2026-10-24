@@ -47,14 +47,27 @@
 .bb-print-root { display: none; }
 
 @media print {
+  /* Page size is set per sheet (A4 landscape for cards, portrait for stickers) by the app.
+     This is the fallback. Margins are zero so the grid is exact. */
   @page { size: A4 landscape; margin: 0; }
-  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+
+  /* The dashboard uses fixed heights and hidden overflow. Release them so no sheet is clipped. */
+  html, body, #root { height: auto !important; min-height: 0 !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
   body > *:not(.bb-print-root) { display: none !important; }
-  .bb-print-root { display: block !important; position: absolute; left: 0; top: 0; width: 297mm; }
+
+  .bb-print-root { display: block !important; position: absolute; left: 0; top: 0; margin: 0; padding: 0; }
   .bb-print-root, .bb-print-root * { visibility: visible !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  /* One A4 landscape page = 2 x 2 quarters. Each quarter is 148.5 x 105 mm. */
-  .bb-sheet { position: relative; width: 297mm; height: 210mm; display: grid; grid-template-columns: 148.5mm 148.5mm; grid-template-rows: 105mm 105mm; page-break-after: always; break-after: page; }
+
+  .bb-sheet { position: relative; overflow: hidden; box-sizing: border-box; display: grid; page-break-after: always; break-after: page; }
   .bb-sheet:last-child { page-break-after: auto; break-after: auto; }
-  .bb-cell { position: relative; width: 148.5mm; height: 105mm; overflow: hidden; box-sizing: border-box; outline: 0.15mm dashed #d0d0d0; outline-offset: -0.15mm; }
-  .bb-cell.bb-center { display: flex; align-items: center; justify-content: center; }
+
+  /* Card sheet: A4 landscape, 2 x 2 quarters, total 297 x 209 mm */
+  .bb-sheet-cards { width: 297mm; height: 209mm; grid-template-columns: 148.5mm 148.5mm; grid-template-rows: 104.5mm 104.5mm; }
+  .bb-cell-cards { position: relative; width: 148.5mm; height: 104.5mm; overflow: hidden; box-sizing: border-box; outline: 0.15mm dashed #d0d0d0; outline-offset: -0.15mm; }
+
+  /* Sticker sheet: A4 portrait, 2 columns x 3 rows, total 209 x 295.5 mm */
+  .bb-sheet-stickers { width: 209mm; height: 295.5mm; grid-template-columns: 104.5mm 104.5mm; grid-template-rows: 98.5mm 98.5mm 98.5mm; }
+  .bb-cell-stickers { position: relative; width: 104.5mm; height: 98.5mm; overflow: hidden; box-sizing: border-box; outline: 0.15mm dashed #d0d0d0; outline-offset: -0.15mm; }
+
+  .bb-center { display: flex; align-items: center; justify-content: center; }
 }
