@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import QRCode from 'qrcode'
 import { DEFAULT_THEME } from '../utils/theme.js'
@@ -6,44 +6,31 @@ import '../styles/brandbook.css'
 
 /* ------------------------------------------------------------------
    Brand Book & Printables
-   - Thank You card: 10 sizes, 10 layouts, 24 font pairs, logo, 3 languages.
-     A4 landscape, 4 per page (2 x 2), each fitted and centred in its quarter.
-   - Table QR stickers: From–To range, own QR per table, 3 designs.
-     A4 portrait, 6 per page (2 columns x 3 rows).
+   - Thank You card: 10 sizes, 10 layouts, 24 font pairs, 3 languages.
+   - Printing: A4 PORTRAIT, cards upright at true size (no rotation, no zoom,
+     no transform). Cards per page are calculated from the card size, and the
+     page count follows from the Quantity you enter.
+   - QR codes are drawn as SVG from the QR matrix, so they are always present
+     in the print (no image loading race).
+   - Table QR stickers: From–To range, own QR per table, 6 per A4 page (2 x 3).
    Printing renders only the chosen sheet into a portal, so the dashboard UI
    is never printed. Nothing here changes orders, sessions or the database.
    ------------------------------------------------------------------ */
 
 const PX = 96                        // CSS pixels per inch (print scale)
-const STICKER = 360                  // sticker design size (95.25 mm)
-const STICKER_PRINT_SCALE = 0.95     // printed sticker ~90 mm, leaves a gap
+const MM_PER_IN = 25.4
+const PAGE_W_PX = (210 / MM_PER_IN) * PX   // A4 portrait width  (793.7 px)
+const PAGE_H_PX = (297 / MM_PER_IN) * PX   // A4 portrait height (1122.5 px)
+const STICKER = 360                  // sticker design size (95.25 mm), printed at true size
 const PREVIEW_CARD_MAX_W = 280
 const PREVIEW_CARD_MAX_H = 420
 const PREVIEW_STICKER = 280
-
-// Card sheet: A4 landscape, 2 x 2 quarters (148.5 x 104.5 mm each)
-const CARD_CELL_W_MM = 148.5
-const CARD_CELL_H_MM = 104.5
-const CELL_W = (CARD_CELL_W_MM / 25.4) * PX
-const CELL_H = (CARD_CELL_H_MM / 25.4) * PX
-const CUT_SAFE = 0.96                // keep a little margin inside each cell
-
-// Sticker sheet: A4 portrait, 2 columns x 3 rows (104.5 x 98.5 mm each)
-const STICKERS_PER_PAGE = 6
-const STICKER_CELL_W_MM = 104.5
-const STICKER_CELL_H_MM = 98.5
-
 const MAX_TABLES = 100
-const REF_W = 336                    // design reference: 3.5 in wide
-const REF_H = 480                    //                   5 in tall
+const MAX_QTY = 500
+const REF_W = 336                    // card design reference: 3.5 in wide
+const REF_H = 480                    //                       5 in tall
 
-// Page size for each sheet type. Injected just before printing.
-const PAGE_CSS = {
-  cards: '@page { size: A4 landscape; margin: 0; }',
-  stickers: '@page { size: A4 portrait; margin: 0; }',
-}
-
-// 10 premium card sizes (inches). Each is fitted to a quarter automatically.
+// 10 premium card sizes (inches). Printed upright at true size.
 const CARD_SIZES = [
   { id: 'std', name: 'Standard Tall · 3.5 × 5 in', w: 3.5, h: 5 },
   { id: 'slim', name: 'Slim Tall (rack) · 2 × 6 in', w: 2, h: 6 },
@@ -137,13 +124,13 @@ const DEFAULTS = {
   lang: 'en',
   layout: 'classic',
   font: 0,
+  qty: 4,
   design: 'border',
   name: '',
   heading: '',   // empty = language default
   message: '',
   cta: '',
   bg: '',        // empty = restaurant brand colour
-  logoBg: 'transparent', // 'transparent' | 'chip'
   from: 1,
   to: 6,
 }
@@ -180,38 +167,53 @@ function shade(hex, amount) {
   return `#${to(mix(0))}${to(mix(1))}${to(mix(2))}`
 }
 
-/* ---------- sizing ---------- */
+/* ---------- sizing & grid ---------- */
 function sizeFor(id) {
   return CARD_SIZES.find((s) => s.id === id) || CARD_SIZES[0]
 }
 
-// Pick the orientation (upright or turned 90°) that fits a card-sheet quarter
-// at the largest scale, never enlarging beyond true size.
-function fitCell(cw, ch) {
-  const options = [
-    { rot: false, dw: cw, dh: ch },
-    { rot: true, dw: ch, dh: cw },
-  ]
-  let best = { rot: false, scale: 0 }
-  for (const o of options) {
-    const sc = Math.min(CELL_W * CUT_SAFE / o.dw, CELL_H * CUT_SAFE / o.dh)
-    if (sc > best.scale) best = { rot: o.rot, scale: sc }
-  }
-  return { rot: best.rot, scale: Math.min(best.scale, 1) }
+// How many upright cards fit on one A4 portrait page, as a grid.
+function gridFor(cw, ch) {
+  const cols = Math.max(1, Math.floor(PAGE_W_PX / cw))
+  const rows = Math.max(1, Math.floor(PAGE_H_PX / ch))
+  return { cols, rows, perPage: cols * rows }
 }
 
-/* ---------- QR hook ---------- */
-function useQr(text) {
-  const [src, setSrc] = useState('')
-  useEffect(() => {
-    let alive = true
-    if (!text) { setSrc(''); return undefined }
-    QRCode.toDataURL(text, { margin: 1, width: 600, errorCorrectionLevel: 'M' })
-      .then((u) => { if (alive) setSrc(u) })
-      .catch(() => { if (alive) setSrc('') })
-    return () => { alive = false }
+/* ---------- QR as SVG (synchronous, always present in print) ---------- */
+function QrSvg({ text, size }) {
+  const d = useMemo(() => {
+    if (!text) return null
+    try {
+      const qr = QRCode.create(text, { errorCorrectionLevel: 'M' })
+      const count = qr.modules.size
+      const data = qr.modules.data
+      let path = ''
+      for (let r = 0; r < count; r++) {
+        for (let c = 0; c < count; c++) {
+          if (data[r * count + c]) path += `M${c} ${r}h1v1h-1z`
+        }
+      }
+      return { count, path }
+    } catch {
+      return null
+    }
   }, [text])
-  return src
+
+  if (!d) return <div style={{ width: size, height: size }} />
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${d.count} ${d.count}`}
+      shapeRendering="crispEdges"
+      style={{ display: 'block' }}
+      role="img"
+      aria-label="QR code"
+    >
+      <rect width={d.count} height={d.count} fill="#FFFFFF" />
+      <path d={d.path} fill="#000000" />
+    </svg>
+  )
 }
 
 /* ---------- saved settings (per device) ---------- */
@@ -259,10 +261,9 @@ function useFontLoader(pairIndex, rtl) {
 
 /* ---------- thank you card ----------
    Designed on a 336 x 480 px reference and scaled by k, so every size keeps
-   the same proportions. Text colour is set automatically for contrast.
-   The restaurant logo sits at the top of every layout; transparent PNGs work best. */
+   the same proportions. Text colour is set automatically for contrast. */
 function CardFace({ d }) {
-  const { layout, bg, fg, hf, bf, name, heading, message, cta, qr, logo, logoBg, W, H, rtl } = d
+  const { layout, bg, fg, hf, bf, name, heading, message, cta, url, W, H, rtl } = d
   const k = Math.min(W / REF_W, H / REF_H)
   const z = (v) => Math.round(v * k)
   const band = shade(bg, 0.18)
@@ -283,7 +284,7 @@ function CardFace({ d }) {
     const p = z(10)
     return (
       <div className="bb-qr-box" style={{ width: s + p * 2, height: s + p * 2, padding: p, borderRadius: z(12) }}>
-        {qr ? <img src={qr} alt="" style={{ width: s, height: s }} /> : <div style={{ width: s, height: s }} />}
+        <QrSvg text={url} size={s} />
       </div>
     )
   }
@@ -293,42 +294,17 @@ function CardFace({ d }) {
   const Msg = ({ align = 'center', size = 15 }) => (
     <p style={b({ fontSize: z(size), textAlign: align, margin: z(14) + 'px 0 0' })}>{message}</p>
   )
-  // Logo: align 'center' | 'start' | 'end'. Fixed max box, aspect ratio kept (object-fit: contain).
-  // logoBg 'chip' puts a soft white rounded backdrop behind a dark logo; default is fully transparent.
-  const Logo = ({ align = 'center', size = 130, mb = 12 }) => {
-    if (!logo) return null
-    const side = align === 'start' ? 'flex-start' : align === 'end' ? 'flex-end' : 'center'
-    const maxW = z(size)
-    const maxH = z(Math.round(size * 0.4))
-    const chip = logoBg === 'chip'
-    return (
-      <div style={{ display: 'flex', alignSelf: side, marginLeft: align === 'center' ? 'auto' : undefined, marginRight: align === 'center' ? 'auto' : undefined, marginBottom: z(mb) }}>
-        <img
-          src={logo}
-          alt=""
-          style={{
-            display: 'block', width: 'auto', height: 'auto',
-            maxWidth: maxW, maxHeight: maxH, objectFit: 'contain',
-            background: chip ? '#FFFFFF' : 'transparent',
-            padding: chip ? z(6) : 0, borderRadius: chip ? z(10) : 0,
-            boxSizing: 'content-box', border: 'none', outline: 'none', boxShadow: 'none',
-          }}
-        />
-      </div>
-    )
-  }
 
   const words = String(heading).split(' ')
   const pad = z(34)
-  const start = rtl ? 'end' : 'start'
   const textAlign = rtl ? 'right' : 'left'
+  const startSide = rtl ? 'flex-end' : 'flex-start'
 
   switch (layout) {
     case 'band':
       return (
         <div style={{ ...base, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ background: band, padding: `${z(26)}px ${z(24)}px ${z(26)}px`, textAlign: 'center' }}>
-            <Logo size={130} mb={10} />
+          <div style={{ background: band, padding: `${z(34)}px ${z(24)}px ${z(26)}px`, textAlign: 'center' }}>
             <p style={caps}>{name}</p>
             <h1 style={h({ fontSize: z(52), marginTop: z(10) })}>{heading}</h1>
           </div>
@@ -343,7 +319,6 @@ function CardFace({ d }) {
     case 'split':
       return (
         <div style={{ ...base, padding: pad, display: 'flex', flexDirection: 'column' }}>
-          <Logo align={start} size={120} mb={12} />
           <p style={caps}>{name}</p>
           <h1 style={h({ fontSize: z(58), marginTop: z(14), textAlign })}>{heading}</h1>
           <p style={b({ fontSize: z(15), marginTop: z(14), maxWidth: z(260), textAlign })}>{message}</p>
@@ -361,10 +336,9 @@ function CardFace({ d }) {
       return (
         <div style={{ ...base, padding: z(14) }}>
           <div style={{ border: `${Math.max(1, z(2))}px solid ${fg}`, height: '100%', boxSizing: 'border-box', padding: z(8) }}>
-            <div style={{ border: `1px solid ${fg}`, height: '100%', boxSizing: 'border-box', padding: `${z(24)}px ${z(24)}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-              <Logo size={120} mb={10} />
+            <div style={{ border: `1px solid ${fg}`, height: '100%', boxSizing: 'border-box', padding: `${z(28)}px ${z(24)}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
               <p style={caps}>{name}</p>
-              <h1 style={h({ fontSize: z(54), marginTop: z(12) })}>{heading}</h1>
+              <h1 style={h({ fontSize: z(54), marginTop: z(14) })}>{heading}</h1>
               <Msg />
               <div style={{ marginTop: 'auto' }}><QrBox size={160} /></div>
               <Cta size={16} />
@@ -376,7 +350,6 @@ function CardFace({ d }) {
     case 'bigtype':
       return (
         <div style={{ ...base, padding: z(30), display: 'flex', flexDirection: 'column' }}>
-          <Logo align={start} size={110} mb={10} />
           <p style={caps}>{name}</p>
           <h1 style={h({ fontSize: z(88), marginTop: z(10) })}>{words[0] || heading}</h1>
           {words.length > 1 && <h1 style={h({ fontSize: z(88), marginTop: -z(6) })}>{words.slice(1).join(' ')}</h1>}
@@ -390,12 +363,11 @@ function CardFace({ d }) {
 
     case 'ribbon':
       return (
-        <div style={{ ...base, padding: `${z(30)}px ${z(28)}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          <Logo size={130} mb={12} />
+        <div style={{ ...base, padding: `${z(36)}px ${z(28)}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <div style={{ background: fg, color: bg, padding: `${z(7)}px ${z(18)}px`, borderRadius: 999 }}>
             <p style={{ ...caps, color: bg }}>{name}</p>
           </div>
-          <h1 style={h({ fontSize: z(50), marginTop: z(20) })}>{heading}</h1>
+          <h1 style={h({ fontSize: z(50), marginTop: z(22) })}>{heading}</h1>
           <Msg />
           <div style={{ marginTop: 'auto' }}><QrBox size={165} /></div>
           <Cta />
@@ -404,11 +376,10 @@ function CardFace({ d }) {
 
     case 'minimal':
       return (
-        <div style={{ ...base, padding: `${z(44)}px ${z(36)}px ${z(40)}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          <Logo size={120} mb={12} />
+        <div style={{ ...base, padding: `${z(54)}px ${z(36)}px ${z(40)}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <p style={caps}>{name}</p>
-          <h1 style={h({ fontSize: z(40), marginTop: z(16), textTransform: rtl ? 'none' : 'uppercase', letterSpacing: rtl ? '0' : '0.12em' })}>{heading}</h1>
-          <div style={{ width: z(48), height: 1, background: fg, margin: `${z(18)}px 0` }} />
+          <h1 style={h({ fontSize: z(40), marginTop: z(18), textTransform: rtl ? 'none' : 'uppercase', letterSpacing: rtl ? '0' : '0.12em' })}>{heading}</h1>
+          <div style={{ width: z(48), height: 1, background: fg, margin: `${z(20)}px 0` }} />
           <Msg size={14} />
           <div style={{ marginTop: 'auto' }}><QrBox size={150} /></div>
           <Cta size={16} />
@@ -417,11 +388,10 @@ function CardFace({ d }) {
 
     case 'badge':
       return (
-        <div style={{ ...base, padding: `${z(30)}px ${z(28)}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          <Logo size={120} mb={8} />
+        <div style={{ ...base, padding: `${z(36)}px ${z(28)}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <p style={caps}>{name}</p>
-          <h1 style={h({ fontSize: z(50), marginTop: z(10) })}>{heading}</h1>
-          <div style={{ marginTop: z(18), width: z(220), height: z(220), borderRadius: '50%', border: `${Math.max(1, z(3))}px dashed ${fg}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <h1 style={h({ fontSize: z(50), marginTop: z(12) })}>{heading}</h1>
+          <div style={{ marginTop: z(22), width: z(220), height: z(220), borderRadius: '50%', border: `${Math.max(1, z(3))}px dashed ${fg}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <QrBox size={170} />
           </div>
           <Cta size={17} />
@@ -435,11 +405,10 @@ function CardFace({ d }) {
           <div style={{ width: z(74), background: band, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <p style={{ ...caps, transform: 'rotate(-90deg)', whiteSpace: 'nowrap', fontSize: z(13) }}>{name}</p>
           </div>
-          <div style={{ flex: 1, padding: `${z(30)}px ${z(26)}px`, display: 'flex', flexDirection: 'column' }}>
-            <Logo align={start} size={110} mb={10} />
+          <div style={{ flex: 1, padding: `${z(34)}px ${z(26)}px`, display: 'flex', flexDirection: 'column' }}>
             <h1 style={h({ fontSize: z(52) })}>{heading}</h1>
             <Msg align={textAlign} />
-            <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', alignItems: rtl ? 'flex-end' : 'flex-start' }}>
+            <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', alignItems: startSide }}>
               <QrBox size={150} />
               <p style={b({ fontSize: z(16), fontWeight: 700, margin: `${z(10)}px 0 0` })}>{cta}</p>
             </div>
@@ -450,10 +419,7 @@ function CardFace({ d }) {
     case 'corner':
       return (
         <div style={{ ...base, padding: z(30), display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <Logo align={start} size={110} mb={0} />
-            <QrBox size={120} />
-          </div>
+          <div style={{ alignSelf: rtl ? 'flex-start' : 'flex-end' }}><QrBox size={120} /></div>
           <div style={{ marginTop: 'auto' }}>
             <p style={caps}>{name}</p>
             <h1 style={h({ fontSize: z(66), marginTop: z(10) })}>{heading}</h1>
@@ -466,10 +432,9 @@ function CardFace({ d }) {
     case 'classic':
     default:
       return (
-        <div style={{ ...base, padding: `${z(36)}px ${z(32)}px ${z(34)}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          <Logo size={140} mb={12} />
+        <div style={{ ...base, padding: `${z(40)}px ${z(32)}px ${z(34)}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <p style={caps}>{name}</p>
-          <h1 style={h({ fontSize: z(56), marginTop: z(14) })}>{heading}</h1>
+          <h1 style={h({ fontSize: z(56), marginTop: z(16) })}>{heading}</h1>
           <Msg />
           <div style={{ marginTop: 'auto' }}><QrBox size={170} /></div>
           <Cta />
@@ -478,19 +443,13 @@ function CardFace({ d }) {
   }
 }
 
-/* A card that owns its QR image */
-function Card({ url, ...rest }) {
-  const qr = useQr(url)
-  return <CardFace d={{ ...rest, qr }} />
-}
-
-/* ---------- table stickers (design 360 px) ---------- */
-function StickerFace({ design, name, table, cta, bg, hf, bf, rtl, qr }) {
+/* ---------- table stickers (design 360 px, printed at true size) ---------- */
+function StickerFace({ design, name, table, cta, bg, hf, bf, rtl, url }) {
   const onBrand = contrastText(bg)
   const ink = '#111111'
   const box = (size) => (
     <div className="bb-qr-box" style={{ width: size + 20, height: size + 20 }}>
-      {qr ? <img src={qr} alt="" style={{ width: size, height: size }} /> : <div style={{ width: size, height: size }} />}
+      <QrSvg text={url} size={size} />
     </div>
   )
   const pill = (
@@ -541,25 +500,23 @@ function StickerFace({ design, name, table, cta, bg, hf, bf, rtl, qr }) {
   )
 }
 
-function Sticker({ url, ...rest }) {
-  const qr = useQr(url)
-  return <StickerFace {...rest} qr={qr} />
-}
-
-/* ---------- print sheets ---------- */
-// A4 landscape card sheet: 4 cards, 2 x 2
-function CardSheet({ cfg }) {
-  const slot = {
-    position: 'absolute', left: '50%', top: '50%', width: cfg.cw, height: cfg.ch,
-    transform: `translate(-50%, -50%)${cfg.rot ? ' rotate(90deg)' : ''} scale(${cfg.scale})`,
-    transformOrigin: '50% 50%',
-  }
+/* ---------- print pages (A4 portrait, 210 x 297 mm, no transform, no zoom) ---------- */
+// Card page: CSS grid of exact card size tracks. Empty slots keep the grid intact.
+function CardPage({ cfg, count }) {
+  const { cols, rows } = gridFor(cfg.cw, cfg.ch)
+  const slots = cols * rows
   return (
-    <div className="bb-page bb-page-cards">
-      <div className="bb-sheet bb-sheet-cards">
-        {[0, 1, 2, 3].map((i) => (
-          <div className="bb-cell bb-cell-cards" key={i}>
-            <div style={slot}><Card {...cfg} /></div>
+    <div className="bb-page">
+      <div
+        className="bb-sheet bb-sheet-cards"
+        style={{
+          gridTemplateColumns: `repeat(${cols}, ${cfg.cw}px)`,
+          gridTemplateRows: `repeat(${rows}, ${cfg.ch}px)`,
+        }}
+      >
+        {Array.from({ length: slots }, (_, i) => (
+          <div className="bb-card-cell" key={i} style={{ width: cfg.cw, height: cfg.ch }}>
+            {i < count ? <CardFace d={{ ...cfg, url: cfg.url }} /> : null}
           </div>
         ))}
       </div>
@@ -567,18 +524,14 @@ function CardSheet({ cfg }) {
   )
 }
 
-// A4 portrait sticker sheet: up to 6 stickers, 2 x 3
+// Sticker page: 2 columns x 3 rows, each cell 105 x 99 mm, sticker centred at true size
 function StickerPage({ items }) {
   return (
-    <div className="bb-page bb-page-stickers">
+    <div className="bb-page">
       <div className="bb-sheet bb-sheet-stickers">
-        {Array.from({ length: STICKERS_PER_PAGE }, (_, i) => (
-          <div className="bb-cell bb-cell-stickers bb-center" key={i}>
-            {items[i] ? (
-              <div style={{ width: STICKER, height: STICKER, transform: `scale(${STICKER_PRINT_SCALE})`, transformOrigin: '50% 50%', flexShrink: 0 }}>
-                <Sticker {...items[i]} />
-              </div>
-            ) : null}
+        {Array.from({ length: 6 }, (_, i) => (
+          <div className="bb-cell-stickers bb-center" key={i}>
+            {items[i] ? <StickerFace {...items[i]} /> : null}
           </div>
         ))}
       </div>
@@ -586,46 +539,24 @@ function StickerPage({ items }) {
   )
 }
 
-function setPageSize(css) {
-  let el = document.getElementById('bb-page-size')
-  if (!el) {
-    el = document.createElement('style')
-    el.id = 'bb-page-size'
-    document.head.appendChild(el)
-  }
-  el.textContent = css
-}
-
-function clearPageSize() {
-  const el = document.getElementById('bb-page-size')
-  if (el) el.remove()
-}
-
-/* Sets the right A4 orientation, waits for fonts and images, then prints */
+/* Waits for fonts, then opens the print dialog. QR is SVG, so no image wait is needed. */
 function PrintPortal({ printing, onDone, children }) {
   useEffect(() => {
     if (!printing) return undefined
     let cancelled = false
     const finish = () => { if (!cancelled) onDone() }
     window.addEventListener('afterprint', finish)
-    setPageSize(PAGE_CSS[printing] || PAGE_CSS.cards)
 
-    const waitReady = async () => {
-      const start = Date.now()
-      while (Date.now() - start < 4000) {
-        const imgs = [...document.querySelectorAll('.bb-print-root img')]
-        if (imgs.length && imgs.every((i) => i.complete && i.naturalWidth > 0)) break
-        await new Promise((r) => setTimeout(r, 100))
-      }
+    const go = async () => {
       try { if (document.fonts && document.fonts.ready) await document.fonts.ready } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 60))
       if (!cancelled) window.print()
     }
-    waitReady()
+    go()
 
     return () => {
       cancelled = true
       window.removeEventListener('afterprint', finish)
-      clearPageSize()
     }
   }, [printing, onDone])
 
@@ -638,7 +569,6 @@ export default function BrandBook({ session }) {
   const restaurantId = session?.restaurant_id
   const qrSecret = session?.qr_secret
   const brand = normHex(session?.theme?.primary)
-  const logo = session?.logo_url || ''
 
   const [tab, setTab] = useState('card')
   const [s, setS] = useState(() => loadSettings(restaurantId))
@@ -659,7 +589,10 @@ export default function BrandBook({ session }) {
   const size = sizeFor(s.sizeId)
   const cw = Math.round(size.w * PX)
   const ch = Math.round(size.h * PX)
-  const fit = fitCell(cw, ch)
+  const grid = gridFor(cw, ch)
+
+  const qty = Math.min(MAX_QTY, Math.max(1, Math.round(Number(s.qty)) || 1))
+  const cardPages = Math.ceil(qty / grid.perPage)
 
   const layoutIndex = Math.max(0, LAYOUTS.findIndex((l) => l.id === s.layout))
   const fontIndex = Math.min(Math.max(0, Number(s.font) || 0), FONT_PAIRS.length - 1)
@@ -686,12 +619,12 @@ export default function BrandBook({ session }) {
   const to = Math.min(Math.max(rawTo, from), Math.min(MAX_TABLES, from + MAX_TABLES - 1))
   const rangeError = rawTo < from ? '"To" number "From" se chhota nahi ho sakta.' : rawTo > MAX_TABLES ? `Ek baar mein maximum ${MAX_TABLES} tables.` : ''
   const tableNums = Array.from({ length: to - from + 1 }, (_, i) => from + i)
-  const pageCount = Math.ceil(tableNums.length / STICKERS_PER_PAGE)
+  const stickerPageCount = Math.ceil(tableNums.length / 6)
 
   const tableUrl = (n) => (ready ? `${origin}/order/${restaurantId}/${qrSecret}/T${n}` : '')
 
   const cardCfg = {
-    cw, ch, W: cw, H: ch, rot: fit.rot, scale: fit.scale, url: deliveryUrl, logo, logoBg: s.logoBg,
+    cw, ch, W: cw, H: ch, url: deliveryUrl,
     layout: LAYOUTS[layoutIndex].id, bg, fg, hf, bf, name, heading, message, cta, rtl,
   }
 
@@ -700,8 +633,17 @@ export default function BrandBook({ session }) {
   })
 
   const stickerPages = []
-  for (let i = 0; i < tableNums.length; i += STICKERS_PER_PAGE) {
-    stickerPages.push(tableNums.slice(i, i + STICKERS_PER_PAGE).map(stickerItem))
+  for (let i = 0; i < tableNums.length; i += 6) {
+    stickerPages.push(tableNums.slice(i, i + 6).map(stickerItem))
+  }
+
+  // Card pages: qty cards, grid.perPage per A4 page, last page partially filled
+  const cardPageCounts = []
+  let remaining = qty
+  while (remaining > 0) {
+    const take = Math.min(grid.perPage, remaining)
+    cardPageCounts.push(take)
+    remaining -= take
   }
 
   const onDone = () => setPrinting(null)
@@ -766,19 +708,25 @@ export default function BrandBook({ session }) {
           <div className="bb-preview-col">
             <div className="bb-preview" style={{ width: previewBoxW, height: previewBoxH }}>
               <div style={{ transform: `scale(${cardScale})`, transformOrigin: 'top left', width: cw, height: ch }}>
-                <Card {...cardCfg} />
+                <CardFace d={{ ...cardCfg, url: deliveryUrl }} />
               </div>
             </div>
             <p className="bb-note">
-              {size.name}. A4 landscape par 4 cards (2 x 2), har card apne quarter mein center mein.
-              {!logo && ' Logo ke liye Settings > Branding mein logo upload karein.'}
+              {size.name}. A4 portrait par {grid.cols} x {grid.rows} = <b>{grid.perPage} cards per page</b>, true size par, upright.
+            </p>
+            <p className="bb-note">
+              {qty} cards = <b>{cardPages} page</b>{cardPages > 1 ? ' (auto-pagination)' : ''}.
             </p>
             <button type="button" className="bb-print" onClick={printCards} disabled={!ready}>
-              A4 par 4 cards print karein
+              {qty} cards print karein
             </button>
           </div>
 
           <div className="bb-controls">
+            <label className="bb-field">
+              <span>Quantity (kitne cards)</span>
+              <input type="number" min={1} max={MAX_QTY} value={s.qty} onChange={(e) => update({ qty: e.target.value })} />
+            </label>
             <label className="bb-field">
               <span>Card size (10)</span>
               <select value={size.id} onChange={(e) => update({ sizeId: e.target.value })}>
@@ -803,13 +751,6 @@ export default function BrandBook({ session }) {
               <input value={s.cta} placeholder={L.cta} maxLength={40} onChange={(e) => update({ cta: e.target.value })} />
             </label>
             {bgField}
-            <label className="bb-field">
-              <span>Logo ka backdrop</span>
-              <select value={s.logoBg} onChange={(e) => update({ logoBg: e.target.value })}>
-                <option value="transparent">Transparent (default)</option>
-                <option value="chip">Soft white chip (dark logo ke liye)</option>
-              </select>
-            </label>
             <div className="bb-field">
               <span>Layout (10)</span>
               <div className="bb-layouts">
@@ -835,14 +776,14 @@ export default function BrandBook({ session }) {
           <div className="bb-preview-col">
             <div className="bb-preview" style={{ width: PREVIEW_STICKER, height: PREVIEW_STICKER }}>
               <div style={{ transform: `scale(${stickerScale})`, transformOrigin: 'top left', width: STICKER, height: STICKER }}>
-                <Sticker {...stickerItem(previewTable)} />
+                <StickerFace {...stickerItem(previewTable)} />
               </div>
             </div>
-            <p className="bb-note">Preview: {L.table} {previewTable}. A4 portrait par 6 stickers (2 x 3), har sticker ~90 mm.</p>
+            <p className="bb-note">Preview: {L.table} {previewTable}. A4 portrait par 6 stickers (2 x 3), true size par.</p>
             <p className="bb-note">
               {rangeError
                 ? <span className="bb-error">{rangeError}</span>
-                : <>T{from}–T{to}: {tableNums.length} sticker, {pageCount} A4 page.</>}
+                : <>T{from}–T{to}: {tableNums.length} sticker, {stickerPageCount} A4 page.</>}
             </p>
             <button type="button" className="bb-print" onClick={printStickers} disabled={!ready || Boolean(rangeError)}>
               T{from}–T{to} ke stickers print karein
@@ -882,7 +823,7 @@ export default function BrandBook({ session }) {
       )}
 
       <PrintPortal printing={printing} onDone={onDone}>
-        {printing === 'cards' && <CardSheet cfg={cardCfg} />}
+        {printing === 'cards' && cardPageCounts.map((count, i) => <CardPage key={i} cfg={cardCfg} count={count} />)}
         {printing === 'stickers' && stickerPages.map((items, i) => <StickerPage key={i} items={items} />)}
       </PrintPortal>
     </div>
